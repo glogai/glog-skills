@@ -57,6 +57,8 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
   - Optimize ONLY the code touched by the fixes.
   - Deduplicate ONLY where it directly relates to the fixes.
   - Do not refactor unrelated code.
+- Generate a remediation report file inside `.glog` instead of only printing results in chat.
+- The report must be saved as `.glog/glog-remediation-report.md`.
 
 # Execution workflow
 
@@ -106,29 +108,49 @@ For each finding:
 - Only deduplicate what was introduced/affected by fixes.
 
 ## Step 6 — Final report
-Provide:
-- Summary of findings from `.glog/glog-scan.sarif`
-- Which were genuine vs not genuine (and rationale)
-- Actions performed (files changed + what changed)
-- Any follow-ups
 
-## Step 7 — Cleanup .glog (preserve SARIF)
+Create a remediation report file at:
+
+`.glog/glog-remediation-report.md`
+
+The report must contain:
+
+- Scan metadata (date, lang, client, env)
+- Summary of findings from `.glog/glog-scan.sarif`
+- For each finding:
+  - Genuine vs not genuine
+  - Rationale
+  - Files impacted
+  - Remediation performed (if any)
+- List of code changes
+- Any follow-ups / recommendations
+
+After saving the report file:
+- Provide a short summary in chat
+- Do not print the full report content in chat unless the user asks
+
+## Step 7 — Cleanup .glog (preserve SARIF and report)
 
 After all analysis and remediation work is finished:
 
-1) Ensure `.glog/glog-scan.sarif` exists.
-   - If missing, do NOT delete anything and warn the user.
+Files that must be preserved:
+- `.glog/glog-scan.sarif`
+- `.glog/glog-remediation-report.md`
 
-2) Temporarily move `glog-scan.sarif` outside the `.glog` directory.
+Process:
+
+1) Ensure both files exist.
+   - If any is missing, warn the user and do not delete `.glog`.
+
+2) Temporarily move both files outside `.glog`.
 
 3) Remove the entire `.glog` directory.
 
-4) Recreate `.glog` directory.
+4) Recreate `.glog`.
 
-5) Move `glog-scan.sarif` back into `.glog`.
+5) Move preserved files back.
 
-Do not modify the SARIF file contents during this process.
-If cleanup fails, report it but do not block the skill completion.
+Do not modify file contents during cleanup.
 
 # Implementation notes (how to operate in shell)
 
