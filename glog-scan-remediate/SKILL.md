@@ -112,6 +112,24 @@ Provide:
 - Actions performed (files changed + what changed)
 - Any follow-ups
 
+## Step 7 — Cleanup .glog (preserve SARIF)
+
+After all analysis and remediation work is finished:
+
+1) Ensure `.glog/glog-scan.sarif` exists.
+   - If missing, do NOT delete anything and warn the user.
+
+2) Temporarily move `glog-scan.sarif` outside the `.glog` directory.
+
+3) Remove the entire `.glog` directory.
+
+4) Recreate `.glog` directory.
+
+5) Move `glog-scan.sarif` back into `.glog`.
+
+Do not modify the SARIF file contents during this process.
+If cleanup fails, report it but do not block the skill completion.
+
 # Implementation notes (how to operate in shell)
 
 - You may `cd` into `<GLOG_ACTION_PATH>` to run the glog-action entrypoint defined by CLI.md.
