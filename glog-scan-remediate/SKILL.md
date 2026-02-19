@@ -99,17 +99,67 @@ If missing, stop and show the scan command output and your best diagnosis.
   - locations (file + line/region)
   - suggested remediation text (if present)
 
-## Step 4 — Validate + Remediate
+## Step 3.1 — Determine remediation instructions source (SARIF)
+
+Important: The SARIF file does NOT populate `result.fixes`.  
+Instead, remediation guidance is located in:
+
+- `result.message.markdown` (primary)
+- `rule.help.markdown` or `rule.help.text` (secondary fallback)
+
+Rules:
+- Prefer remediation steps explicitly described in `result.message.markdown`.
+- If markdown contains multiple suggestions, pick the one that matches:
+  - the reported file path / code location
+  - the project’s technology stack
+  - the vulnerability type described by ruleId/message
+- If there is no clear remediation text, treat the finding as "needs manual review" and explain why.
+
+
+## Step 4 — Validate + Remediate (markdown-driven remediation)
+
 For each finding:
-- Decide if genuine in this project context.
-- If not genuine:
-  - Explain why clearly.
-  - Point to the relevant code (paths and what you observed).
-- If genuine:
-  - Implement remediation consistent with SARIF suggestion.
-  - Keep changes minimal and focused.
-  - Avoid code duplication by reusing existing utilities.
-  - Add tests only if necessary and consistent with existing test stack.
+
+### 4.1 Validate whether the finding is genuine
+- Inspect the exact location(s) in code referenced by the SARIF.
+- Consider runtime behavior, framework defaults, and existing mitigations.
+- If NOT genuine:
+  - Explain why clearly (for additional review).
+  - Reference relevant code paths and reasoning.
+  - Continue to the next finding.
+
+### 4.2 Extract remediation steps (from result.message.markdown)
+- Parse `result.message.markdown` and identify actionable remediation steps.
+- If remediation is vague, infer a concrete plan that stays consistent with the intent of the markdown guidance.
+- Do not invent unrelated refactors.
+
+### 4.3 Apply remediation (minimal changes, no duplication)
+- Implement the fix as suggested in the markdown guidance as closely as possible.
+- Adapt to the current project’s architecture and tech stack.
+- Avoid code duplication:
+  - reuse existing helper methods/utilities
+  - avoid copy-pasting logic across modules
+- Do not refactor unrelated code.
+
+### 4.4 Verify remediation is correct for this codebase
+After implementing a fix, verify it is correct by doing ALL applicable checks:
+
+- Build/compile succeeds (or equivalent for the stack).
+- Tests pass (if tests exist); add minimal targeted tests only if necessary.
+- The vulnerable pattern is no longer present at the reported location.
+- The fix does not introduce regressions or break API behavior.
+
+### 4.5 If remediation guidance is incorrect or incomplete, adapt it
+If the markdown remediation does NOT fit the actual code/context (e.g. wrong framework assumption, wrong API usage, breaking change, not resolving the issue):
+
+- Modify the remediation to a correct variant for this project, while keeping the original intent.
+- Clearly document in the report:
+  - what the markdown suggested
+  - why it didn’t fit
+  - what you changed instead and why
+
+Stop short of broad refactors; change only what is needed to properly remediate the finding.
+
 
 ## Step 5 — Limited optimization
 - Only optimize code you touched.
@@ -127,6 +177,8 @@ The report must contain:
   - Rationale
   - Files impacted
   - Remediation performed (if any)
+  - Remediation source: result.message.markdown (and whether adapted)
+  - If adapted: what was changed and why
 - List of code changes
 - Any follow-ups / recommendations
 
