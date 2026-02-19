@@ -1,27 +1,31 @@
 ---
 name: glog-scan-remediate
-description: Interactive Glog.AI scan + SARIF validation + focused remediation (no SARIF edits, no unrelated refactors).
+description: Glog.AI scan + SARIF validation + focused remediation (no SARIF edits, no unrelated refactors). Writes report to .glog and cleans artifacts (preserving SARIF + report).
 tools:
   - shell
   - filesystem
 ---
 
-# Interactive setup (ask user first)
+# Setup
 
-Before doing ANY work, ask the user these questions (one by one) and wait for answers:
+Use this hardcoded glog-action path:
 
-1) "What is the absolute path to your glog-action repo (the directory that contains CLI.md and/or glog.sh)?"
-2) "Confirm --lang value (default: csharp)."
-3) "Confirm --client value (default: test)."
-4) "Confirm --env value (default: dev)."
-5) "Confirm --sarif-format-type value (default: STANDARD)."
+`/home/matija/glog/glog-action`
+
+Do not prompt the user for it.
 
 Rules:
-- If the user provides empty answer for a value, use the default shown above.
 - If the provided glog-action path does not exist or is missing CLI.md, ask again with a short hint.
-- Do not proceed until all values are confirmed.
+- Do not proceed until a valid path is confirmed.
 
-After collecting inputs, restate the final configuration in one short block and proceed.
+# Hardcoded scan configuration
+
+Always use the following flags (do not ask the user):
+
+- `--lang python`
+- `--client test`
+- `--env dev`
+- `--sarif-format-type STANDARD`
 
 # Purpose
 
@@ -39,11 +43,11 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
-- Run scan with the user-confirmed flags:
-  - --lang
-  - --client
-  - --env
-  - --sarif-format-type
+- Run scan with the hardcoded flags:
+  - --lang csharp
+  - --client test
+  - --env dev
+  - --sarif-format-type STANDARD
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - Treat remediation advice as a focused security remediation task.
@@ -75,7 +79,11 @@ From the CURRENT project root (the repo you want to scan), do:
 - Recreate `.glog/` directory
 
 2) Execute scan using the invocation defined in CLI.md.
-- Apply flags: `--lang <...> --client <...> --env <...> --sarif-format-type <...>`
+- Apply flags exactly:
+  - `--lang csharp`
+  - `--client test`
+  - `--env dev`
+  - `--sarif-format-type STANDARD`
 - If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project as specified by CLI.md (e.g., via mount/path arguments).
 - Ensure that the output SARIF file ends up at: `.glog/glog-scan.sarif` in the CURRENT project.
 
@@ -108,13 +116,10 @@ For each finding:
 - Only deduplicate what was introduced/affected by fixes.
 
 ## Step 6 — Final report
-
 Create a remediation report file at:
-
 `.glog/glog-remediation-report.md`
 
 The report must contain:
-
 - Scan metadata (date, lang, client, env)
 - Summary of findings from `.glog/glog-scan.sarif`
 - For each finding:
@@ -130,7 +135,6 @@ After saving the report file:
 - Do not print the full report content in chat unless the user asks
 
 ## Step 7 — Cleanup .glog (preserve SARIF and report)
-
 After all analysis and remediation work is finished:
 
 Files that must be preserved:
@@ -138,16 +142,11 @@ Files that must be preserved:
 - `.glog/glog-remediation-report.md`
 
 Process:
-
 1) Ensure both files exist.
    - If any is missing, warn the user and do not delete `.glog`.
-
 2) Temporarily move both files outside `.glog`.
-
 3) Remove the entire `.glog` directory.
-
 4) Recreate `.glog`.
-
 5) Move preserved files back.
 
 Do not modify file contents during cleanup.
