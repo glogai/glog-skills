@@ -44,7 +44,7 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 
 - Before analysis starts, clean `.glog` directory.
 - Run scan with the hardcoded flags:
-  - --lang csharp
+  - --lang python
   - --client test
   - --env dev
   - --sarif-format-type STANDARD
@@ -80,7 +80,7 @@ From the CURRENT project root (the repo you want to scan), do:
 
 2) Execute scan using the invocation defined in CLI.md.
 - Apply flags exactly:
-  - `--lang csharp`
+  - `--lang python`
   - `--client test`
   - `--env dev`
   - `--sarif-format-type STANDARD`
