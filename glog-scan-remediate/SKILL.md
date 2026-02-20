@@ -1,27 +1,31 @@
 ---
 name: glog-scan-remediate
-description: Interactive Glog.AI scan + SARIF validation + focused remediation (no SARIF edits, no unrelated refactors).
+description: Glog.AI scan + SARIF validation + focused remediation (no SARIF edits, no unrelated refactors). Writes report to .glog and cleans artifacts (preserving SARIF + report).
 tools:
   - shell
   - filesystem
 ---
 
-# Interactive setup (ask user first)
+# Setup
 
-Before doing ANY work, ask the user these questions (one by one) and wait for answers:
+Use this hardcoded glog-action path:
 
-1) "What is the absolute path to your glog-action repo (the directory that contains CLI.md and/or glog.sh)?"
-2) "Confirm --lang value (default: csharp)."
-3) "Confirm --client value (default: test)."
-4) "Confirm --env value (default: dev)."
-5) "Confirm --sarif-format-type value (default: STANDARD)."
+`/home/matija/glog/glog-action`
+
+Do not prompt the user for it.
 
 Rules:
-- If the user provides empty answer for a value, use the default shown above.
 - If the provided glog-action path does not exist or is missing CLI.md, ask again with a short hint.
-- Do not proceed until all values are confirmed.
+- Do not proceed until a valid path is confirmed.
 
-After collecting inputs, restate the final configuration in one short block and proceed.
+# Hardcoded scan configuration
+
+Always use the following flags (do not ask the user):
+
+- `--lang python`
+- `--client test`
+- `--env dev`
+- `--sarif-format-type STANDARD`
 
 # Purpose
 
@@ -39,11 +43,11 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
-- Run scan with the user-confirmed flags:
-  - --lang
-  - --client
-  - --env
-  - --sarif-format-type
+- Run scan with the hardcoded flags:
+  - --lang csharp
+  - --client test
+  - --env dev
+  - --sarif-format-type STANDARD
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - Treat remediation advice as a focused security remediation task.
@@ -57,6 +61,8 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
   - Optimize ONLY the code touched by the fixes.
   - Deduplicate ONLY where it directly relates to the fixes.
   - Do not refactor unrelated code.
+- Generate a remediation report file inside `.glog` instead of only printing results in chat.
+- The report must be saved as `.glog/glog-remediation-report.md`.
 
 # Execution workflow
 
@@ -73,7 +79,11 @@ From the CURRENT project root (the repo you want to scan), do:
 - Recreate `.glog/` directory
 
 2) Execute scan using the invocation defined in CLI.md.
-- Apply flags: `--lang <...> --client <...> --env <...> --sarif-format-type <...>`
+- Apply flags exactly:
+  - `--lang csharp`
+  - `--client test`
+  - `--env dev`
+  - `--sarif-format-type STANDARD`
 - If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project as specified by CLI.md (e.g., via mount/path arguments).
 - Ensure that the output SARIF file ends up at: `.glog/glog-scan.sarif` in the CURRENT project.
 
@@ -89,28 +99,109 @@ If missing, stop and show the scan command output and your best diagnosis.
   - locations (file + line/region)
   - suggested remediation text (if present)
 
-## Step 4 — Validate + Remediate
+## Step 3.1 — Determine remediation instructions source (SARIF)
+
+Important: The SARIF file does NOT populate `result.fixes`.  
+Instead, remediation guidance is located in:
+
+- `result.message.markdown` (primary)
+- `rule.help.markdown` or `rule.help.text` (secondary fallback)
+
+Rules:
+- Prefer remediation steps explicitly described in `result.message.markdown`.
+- If markdown contains multiple suggestions, pick the one that matches:
+  - the reported file path / code location
+  - the project’s technology stack
+  - the vulnerability type described by ruleId/message
+- If there is no clear remediation text, treat the finding as "needs manual review" and explain why.
+
+
+## Step 4 — Validate + Remediate (markdown-driven remediation)
+
 For each finding:
-- Decide if genuine in this project context.
-- If not genuine:
-  - Explain why clearly.
-  - Point to the relevant code (paths and what you observed).
-- If genuine:
-  - Implement remediation consistent with SARIF suggestion.
-  - Keep changes minimal and focused.
-  - Avoid code duplication by reusing existing utilities.
-  - Add tests only if necessary and consistent with existing test stack.
+
+### 4.1 Validate whether the finding is genuine
+- Inspect the exact location(s) in code referenced by the SARIF.
+- Consider runtime behavior, framework defaults, and existing mitigations.
+- If NOT genuine:
+  - Explain why clearly (for additional review).
+  - Reference relevant code paths and reasoning.
+  - Continue to the next finding.
+
+### 4.2 Extract remediation steps (from result.message.markdown)
+- Parse `result.message.markdown` and identify actionable remediation steps.
+- If remediation is vague, infer a concrete plan that stays consistent with the intent of the markdown guidance.
+- Do not invent unrelated refactors.
+
+### 4.3 Apply remediation (minimal changes, no duplication)
+- Implement the fix as suggested in the markdown guidance as closely as possible.
+- Adapt to the current project’s architecture and tech stack.
+- Avoid code duplication:
+  - reuse existing helper methods/utilities
+  - avoid copy-pasting logic across modules
+- Do not refactor unrelated code.
+
+### 4.4 Verify remediation is correct for this codebase
+After implementing a fix, verify it is correct by doing ALL applicable checks:
+
+- Build/compile succeeds (or equivalent for the stack).
+- Tests pass (if tests exist); add minimal targeted tests only if necessary.
+- The vulnerable pattern is no longer present at the reported location.
+- The fix does not introduce regressions or break API behavior.
+
+### 4.5 If remediation guidance is incorrect or incomplete, adapt it
+If the markdown remediation does NOT fit the actual code/context (e.g. wrong framework assumption, wrong API usage, breaking change, not resolving the issue):
+
+- Modify the remediation to a correct variant for this project, while keeping the original intent.
+- Clearly document in the report:
+  - what the markdown suggested
+  - why it didn’t fit
+  - what you changed instead and why
+
+Stop short of broad refactors; change only what is needed to properly remediate the finding.
+
 
 ## Step 5 — Limited optimization
 - Only optimize code you touched.
 - Only deduplicate what was introduced/affected by fixes.
 
 ## Step 6 — Final report
-Provide:
+Create a remediation report file at:
+`.glog/glog-remediation-report.md`
+
+The report must contain:
+- Scan metadata (date, lang, client, env)
 - Summary of findings from `.glog/glog-scan.sarif`
-- Which were genuine vs not genuine (and rationale)
-- Actions performed (files changed + what changed)
-- Any follow-ups
+- For each finding:
+  - Genuine vs not genuine
+  - Rationale
+  - Files impacted
+  - Remediation performed (if any)
+  - Remediation source: result.message.markdown (and whether adapted)
+  - If adapted: what was changed and why
+- List of code changes
+- Any follow-ups / recommendations
+
+After saving the report file:
+- Provide a short summary in chat
+- Do not print the full report content in chat unless the user asks
+
+## Step 7 — Cleanup .glog (preserve SARIF and report)
+After all analysis and remediation work is finished:
+
+Files that must be preserved:
+- `.glog/glog-scan.sarif`
+- `.glog/glog-remediation-report.md`
+
+Process:
+1) Ensure both files exist.
+   - If any is missing, warn the user and do not delete `.glog`.
+2) Temporarily move both files outside `.glog`.
+3) Remove the entire `.glog` directory.
+4) Recreate `.glog`.
+5) Move preserved files back.
+
+Do not modify file contents during cleanup.
 
 # Implementation notes (how to operate in shell)
 
