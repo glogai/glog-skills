@@ -1,5 +1,5 @@
 ---
-name: glog-scan-remediate
+name: glog
 description: Glog.AI scan + SARIF validation + focused remediation (no SARIF edits, no unrelated refactors). Writes report to .glog and cleans artifacts (preserving SARIF + report).
 tools:
   - shell
