@@ -15,17 +15,25 @@ Use this hardcoded glog-action path:
 Do not prompt the user for it.
 
 Rules:
-- If the provided glog-action path does not exist or is missing CLI.md, ask again with a short hint.
-- Do not proceed until a valid path is confirmed.
+- If hardcoded path does not exist or is missing CLI.md, stop with a clear error..
 
-# Hardcoded scan configuration
+# Scan configuration
 
-Always use the following flags (do not ask the user):
+Before doing ANY scan work, ask the user:
 
-- `--lang python`
-- `--client test`
-- `--env dev`
-- `--sarif-format-type STANDARD`
+"Which language should be used for scanning? (This controls the optional --lang flag.)  
+Reply with a language value like: python, csharp, java, javascript, etc.  
+If you want to skip, reply with: skip"
+
+Rules:
+- The user response is required (the agent must ask and wait).
+- If the user replies with "skip" (or an empty/whitespace-only response), DO NOT pass `--lang` at all.
+- Otherwise pass `--lang <user_value>` exactly as provided (trim whitespace).
+- Do not invent or default a language.
+- Keep other flags hardcoded:
+  - `--client test`
+  - `--env dev`
+  - `--sarif-format-type STANDARD`
 
 # Purpose
 
@@ -44,10 +52,10 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 
 - Before analysis starts, clean `.glog` directory.
 - Run scan with the hardcoded flags:
-  - --lang python
   - --client test
   - --env dev
   - --sarif-format-type STANDARD
+  - `--lang <user_value>` ONLY if the user provided a language (not skip/empty). Otherwise do not include `--lang` at all.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - Treat remediation advice as a focused security remediation task.
@@ -80,10 +88,10 @@ From the CURRENT project root (the repo you want to scan), do:
 
 2) Execute scan using the invocation defined in CLI.md.
 - Apply flags exactly:
-  - `--lang python`
   - `--client test`
   - `--env dev`
   - `--sarif-format-type STANDARD`
+  - Apply `--lang <value>` ONLY if the user provided a language (not skip/empty). If skipped, do not pass `--lang`.
 - If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project as specified by CLI.md (e.g., via mount/path arguments).
 - Ensure that the output SARIF file ends up at: `.glog/glog-scan.sarif` in the CURRENT project.
 
