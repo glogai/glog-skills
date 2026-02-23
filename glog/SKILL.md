@@ -6,16 +6,38 @@ tools:
   - filesystem
 ---
 
-# Setup
+# Setup — obtain glog-action into cache
 
-Use this hardcoded glog-action path:
+Obtain glog-action from GitHub and store it in a cache directory.
 
-`/home/matija/glog/glog-action`
+Hardcoded repository:
+- Repo URL: `https://github.com/glogai/glog-action`
+- Branch/ref: `main`
 
-Do not prompt the user for it.
+Cache location (prefer in this order):
+1) If `$XDG_CACHE_HOME` is set: `$XDG_CACHE_HOME/glog/glog-action`
+2) Else: `~/.cache/glog/glog-action`
+3) If home is not available: `/tmp/glog/glog-action`
+
+Auth rules (private repo):
+- Use `GITHUB_TOKEN` for git HTTPS authentication.
+- Do NOT put the token in the URL.
+- Do NOT echo or log the token.
+- Use git with an Authorization header (http.extraHeader).
 
 Rules:
-- If hardcoded path does not exist or is missing CLI.md, stop with a clear error..
+- Ensure `GITHUB_TOKEN` is set, otherwise stop with a clear error.
+- If the cache folder does not exist: clone the repo into it.
+- If it exists: perform a `git fetch` and `git reset --hard origin/main` to ensure it matches the configured ref.
+- The cached repo must contain `CLI.md`. If it does not, stop with a clear error.
+- Do not prompt the user for repo URL, ref, or path.
+- Do not write any secrets to disk. Do not echo tokens.
+
+After preparing the cache repo, define:
+
+`<GLOG_ACTION_PATH> = <cache_path>`
+
+and proceed with the workflow using `<GLOG_ACTION_PATH>/CLI.md`.
 
 # Scan configuration
 
@@ -213,7 +235,11 @@ Do not modify file contents during cleanup.
 
 # Implementation notes (how to operate in shell)
 
+- For private repo cloning/fetching via HTTPS, authenticate git using `http.extraHeader` with GITHUB_TOKEN.
+- Never include the token in the URL and never print it.
+
 - You may `cd` into `<GLOG_ACTION_PATH>` to run the glog-action entrypoint defined by CLI.md.
 - You may `cd` back to the CURRENT project root as needed.
 - Use safe shell practices (`set -euo pipefail` if writing scripts inline).
 - Do not write to `.glog/glog-scan.sarif` after scan completion.
+- Avoid printing sensitive information to logs.
