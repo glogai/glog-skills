@@ -6,7 +6,7 @@ tools:
   - filesystem
 ---
 
-# Setup — obtain glog-action into cache
+# Setup: obtain glog-action into cache
 
 Obtain glog-action from GitHub and store it in a cache directory.
 
@@ -96,12 +96,12 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 
 # Execution workflow
 
-## Step 1 — Read glog-action CLI.md (source of truth)
+## Step 1: Read glog-action CLI.md (source of truth)
 - Open and read: `<GLOG_ACTION_PATH>/CLI.md`
 - Identify the exact command(s) to run `glog-action` (entrypoint, required args, docker usage, etc.)
 - Follow CLI.md instructions strictly.
 
-## Step 2 — Clean .glog and run scan
+## Step 2: Clean .glog and run scan
 From the CURRENT project root (the repo you want to scan), do:
 
 1) Clean `.glog`:
@@ -120,7 +120,7 @@ From the CURRENT project root (the repo you want to scan), do:
 After scan, verify `.glog/glog-scan.sarif` exists.
 If missing, stop and show the scan command output and your best diagnosis.
 
-## Step 3 — Analyze findings from SARIF (read-only)
+## Step 3: Analyze findings from SARIF (read-only)
 - Open `.glog/glog-scan.sarif` read-only.
 - Summarize findings:
   - ruleId / title (if present)
@@ -129,7 +129,7 @@ If missing, stop and show the scan command output and your best diagnosis.
   - locations (file + line/region)
   - suggested remediation text (if present)
 
-## Step 3.1 — Determine remediation instructions source (SARIF)
+## Step 3.1: Determine remediation instructions source (SARIF)
 
 Important: The SARIF file does NOT populate `result.fixes`.  
 Instead, remediation guidance is located in:
@@ -146,7 +146,7 @@ Rules:
 - If there is no clear remediation text, treat the finding as "needs manual review" and explain why.
 
 
-## Step 4 — Validate + Remediate (markdown-driven remediation)
+## Step 4: Validate + Remediate (markdown-driven remediation)
 
 For each finding:
 
@@ -191,11 +191,11 @@ If the markdown remediation does NOT fit the actual code/context (e.g. wrong fra
 Stop short of broad refactors; change only what is needed to properly remediate the finding.
 
 
-## Step 5 — Limited optimization
+## Step 5: Limited optimization
 - Only optimize code you touched.
 - Only deduplicate what was introduced/affected by fixes.
 
-## Step 6 — Final report
+## Step 6: Final report
 Create a remediation report file at:
 `.glog/glog-remediation-report.md`
 
@@ -216,7 +216,7 @@ After saving the report file:
 - Provide a short summary in chat
 - Do not print the full report content in chat unless the user asks
 
-## Step 7 — Cleanup .glog (preserve SARIF and report)
+## Step 7: Cleanup .glog (preserve SARIF and report)
 After all analysis and remediation work is finished:
 
 Files that must be preserved:
