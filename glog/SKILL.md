@@ -23,7 +23,7 @@ Auth rules (private repo):
 - Use `GITHUB_TOKEN` for git HTTPS authentication.
 - Do NOT put the token in the URL.
 - Do NOT echo or log the token.
-- Use git with an Authorization header (http.extraHeader).
+- Use git with an Authorization header (`http.extraHeader`).
 
 Rules:
 - Ensure `GITHUB_TOKEN` is set, otherwise stop with a clear error.
@@ -38,6 +38,42 @@ After preparing the cache repo, define:
 `<GLOG_ACTION_PATH> = <cache_path>`
 
 and proceed with the workflow using `<GLOG_ACTION_PATH>/CLI.md`.
+
+# Remediation strategy configuration (REQUIRED)
+
+Before doing ANY scan work, ask the user:
+
+"How should remediations be applied?
+
+Reply with one of:
+
+local → Apply all fixes locally in the current branch (no pull requests).
+
+pr-per-finding → Create a separate branch and Pull Request for EACH genuine vulnerability finding.
+
+Type exactly: local or pr-per-finding"
+
+Rules:
+- The user response is REQUIRED (the agent must ask and wait).
+- If the response is anything other than `local` or `pr-per-finding`, ask again.
+- Do not assume a default.
+- Store the value as `<REMEDIATION_MODE>`.
+
+Behavior:
+
+If `<REMEDIATION_MODE>` = `local`
+→ Apply all remediations directly in the current working branch.
+
+If `<REMEDIATION_MODE>` = `pr-per-finding`
+→ For EACH genuine finding:
+  - Create a new branch:
+    `glog/remediation/<sanitized-ruleId>-<short-hash>`
+  - Apply only the fix related to that finding.
+  - Commit with message:
+    `fix(security): remediate <ruleId> at <file>`
+  - Push branch using `GITHUB_TOKEN`.
+  - Open a Pull Request targeting the original branch.
+  - Continue to next finding.
 
 # Scan configuration
 
@@ -70,6 +106,13 @@ Use global environment variables (do not prompt for them unless missing):
 
 If any is missing, stop and tell the user exactly which one(s) are missing and how to export them.
 
+If `<REMEDIATION_MODE>` = `pr-per-finding`, one of the following must be available:
+
+- GitHub CLI (`gh`), OR
+- GitHub REST API access via `curl` using `GITHUB_TOKEN`
+
+If neither is available, stop with a clear error.
+
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
@@ -97,11 +140,13 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 # Execution workflow
 
 ## Step 1: Read glog-action CLI.md (source of truth)
+
 - Open and read: `<GLOG_ACTION_PATH>/CLI.md`
 - Identify the exact command(s) to run `glog-action` (entrypoint, required args, docker usage, etc.)
 - Follow CLI.md instructions strictly.
 
 ## Step 2: Clean .glog and run scan
+
 From the CURRENT project root (the repo you want to scan), do:
 
 1) Clean `.glog`:
@@ -114,132 +159,111 @@ From the CURRENT project root (the repo you want to scan), do:
   - `--env dev`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language (not skip/empty). If skipped, do not pass `--lang`.
-- If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project as specified by CLI.md (e.g., via mount/path arguments).
+- If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project as specified by CLI.md.
 - Ensure that the output SARIF file ends up at: `.glog/glog-scan.sarif` in the CURRENT project.
 
 After scan, verify `.glog/glog-scan.sarif` exists.
 If missing, stop and show the scan command output and your best diagnosis.
 
 ## Step 3: Analyze findings from SARIF (read-only)
+
 - Open `.glog/glog-scan.sarif` read-only.
 - Summarize findings:
-  - ruleId / title (if present)
-  - severity/level (if present)
+  - ruleId / title
+  - severity/level
   - message
-  - locations (file + line/region)
-  - suggested remediation text (if present)
+  - locations
+  - suggested remediation text
 
 ## Step 3.1: Determine remediation instructions source (SARIF)
 
-Important: The SARIF file does NOT populate `result.fixes`.  
-Instead, remediation guidance is located in:
+Important: The SARIF file does NOT populate `result.fixes`.
 
+Instead, remediation guidance is located in:
 - `result.message.markdown` (primary)
 - `rule.help.markdown` or `rule.help.text` (secondary fallback)
 
-Rules:
-- Prefer remediation steps explicitly described in `result.message.markdown`.
-- If markdown contains multiple suggestions, pick the one that matches:
-  - the reported file path / code location
-  - the project’s technology stack
-  - the vulnerability type described by ruleId/message
-- If there is no clear remediation text, treat the finding as "needs manual review" and explain why.
-
-
-## Step 4: Validate + Remediate (markdown-driven remediation)
+## Step 4: Validate + Remediate (mode-aware, markdown-driven remediation)
 
 For each finding:
 
 ### 4.1 Validate whether the finding is genuine
-- Inspect the exact location(s) in code referenced by the SARIF.
-- Consider runtime behavior, framework defaults, and existing mitigations.
+
+- Inspect referenced code.
 - If NOT genuine:
-  - Explain why clearly (for additional review).
-  - Reference relevant code paths and reasoning.
-  - Continue to the next finding.
+  - Explain why.
+  - Continue.
 
-### 4.2 Extract remediation steps (from result.message.markdown)
-- Parse `result.message.markdown` and identify actionable remediation steps.
-- If remediation is vague, infer a concrete plan that stays consistent with the intent of the markdown guidance.
-- Do not invent unrelated refactors.
+### 4.2 Extract remediation steps
 
-### 4.3 Apply remediation (minimal changes, no duplication)
-- Implement the fix as suggested in the markdown guidance as closely as possible.
-- Adapt to the current project’s architecture and tech stack.
-- Avoid code duplication:
-  - reuse existing helper methods/utilities
-  - avoid copy-pasting logic across modules
-- Do not refactor unrelated code.
+- Parse `result.message.markdown`.
+- Infer concrete plan if vague.
 
-### 4.4 Verify remediation is correct for this codebase
-After implementing a fix, verify it is correct by doing ALL applicable checks:
+### 4.3 Apply remediation (based on `<REMEDIATION_MODE>`)
 
-- Build/compile succeeds (or equivalent for the stack).
-- Tests pass (if tests exist); add minimal targeted tests only if necessary.
-- The vulnerable pattern is no longer present at the reported location.
-- The fix does not introduce regressions or break API behavior.
+If `<REMEDIATION_MODE>` = `local`:
 
-### 4.5 If remediation guidance is incorrect or incomplete, adapt it
-If the markdown remediation does NOT fit the actual code/context (e.g. wrong framework assumption, wrong API usage, breaking change, not resolving the issue):
+- Apply fixes in working tree.
+- After all findings:
+  - Verify build/tests.
+  - Commit once:
+    `fix(security): glog remediation batch`
 
-- Modify the remediation to a correct variant for this project, while keeping the original intent.
-- Clearly document in the report:
-  - what the markdown suggested
-  - why it didn’t fit
-  - what you changed instead and why
+If `<REMEDIATION_MODE>` = `pr-per-finding`:
 
-Stop short of broad refactors; change only what is needed to properly remediate the finding.
+For EACH genuine finding:
 
+1) Ensure working tree is clean.
+2) Create branch:
+   `glog/remediation/<sanitized-ruleId>-<short-hash>`
+3) Apply ONLY that finding's fix.
+4) Verify build/tests.
+5) Commit.
+6) Push.
+7) Open PR.
+8) Switch back.
+9) Reset tree.
+
+Rules:
+- Do NOT combine findings.
+- Do NOT modify SARIF.
+- Log PR failures and continue.
 
 ## Step 5: Limited optimization
-- Only optimize code you touched.
-- Only deduplicate what was introduced/affected by fixes.
+
+- Optimize only touched code.
+- Deduplicate only related changes.
 
 ## Step 6: Final report
-Create a remediation report file at:
-`.glog/glog-remediation-report.md`
 
-The report must contain:
-- Scan metadata (date, lang, client, env)
-- Summary of findings from `.glog/glog-scan.sarif`
-- For each finding:
-  - Genuine vs not genuine
-  - Rationale
-  - Files impacted
-  - Remediation performed (if any)
-  - Remediation source: result.message.markdown (and whether adapted)
-  - If adapted: what was changed and why
-- List of code changes
-- Any follow-ups / recommendations
+Create `.glog/glog-remediation-report.md`.
 
-After saving the report file:
-- Provide a short summary in chat
-- Do not print the full report content in chat unless the user asks
+Report must contain:
+- Scan metadata
+- Summary of findings
+- Genuine vs not genuine
+- Files impacted
+- Remediation performed
+- Remediation source
+- Code changes
+- Remediation mode used: `<REMEDIATION_MODE>`
+- If `pr-per-finding`:
+  - List of PR URLs
+  - Failed PR attempts
+
+Provide short summary in chat.
 
 ## Step 7: Cleanup .glog (preserve SARIF and report)
-After all analysis and remediation work is finished:
 
-Files that must be preserved:
+Preserve:
 - `.glog/glog-scan.sarif`
 - `.glog/glog-remediation-report.md`
 
-Process:
-1) Ensure both files exist.
-   - If any is missing, warn the user and do not delete `.glog`.
-2) Temporarily move both files outside `.glog`.
-3) Remove the entire `.glog` directory.
-4) Recreate `.glog`.
-5) Move preserved files back.
+Remove everything else.
 
-Do not modify file contents during cleanup.
+# Implementation notes
 
-# Implementation notes (how to operate in shell)
-
-- For private repo cloning/fetching via HTTPS, authenticate git using `http.extraHeader` with GITHUB_TOKEN.
-- Never include the token in the URL and never print it.
-
-- You may `cd` into `<GLOG_ACTION_PATH>` to run the glog-action entrypoint defined by CLI.md.
-- You may `cd` back to the CURRENT project root as needed.
-- Use safe shell practices (`set -euo pipefail` if writing scripts inline).
-- Do not write to `.glog/glog-scan.sarif` after scan completion.
-- Avoid printing sensitive information to logs.
+- Use `http.extraHeader` with `GITHUB_TOKEN`.
+- Never print tokens.
+- Do not modify SARIF after scan.
+- Use safe shell practices.
