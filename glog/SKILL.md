@@ -258,13 +258,48 @@ Report must contain:
 
 Provide short summary in chat.
 
+## Cleanup permission boundary
+
+The agent is explicitly allowed to delete files and directories inside the project's `.glog` directory as part of this workflow cleanup.
+
+This deletion is intentional housekeeping and not destructive user data removal.
+
+Allowed cleanup scope:
+- `.glog/**`
+
+Rules:
+- Never delete files outside `.glog`.
+- Only `.glog` artifacts produced by the scan may be removed.
+- The preserved files must remain intact:
+  - `.glog/glog-scan.sarif`
+  - `.glog/glog-remediation-report.md`
+
+Policy note:
+- Removal of extra `.glog` artifacts is explicitly permitted for this skill and must not be blocked as a destructive operation.
+
 ## Step 7: Cleanup .glog (preserve SARIF and report)
 
-Preserve:
-- `.glog/glog-scan.sarif`
-- `.glog/glog-remediation-report.md`
+This workflow explicitly authorizes cleanup inside .glog.
 
-Remove everything else.
+Files that must be preserved:
+- .glog/glog-scan.sarif
+- .glog/glog-remediation-report.md
+
+Cleanup rules:
+- Delete any other file or subdirectory inside .glog.
+- This deletion is allowed and expected for this skill.
+- Do not treat removal of extra .glog artifacts as a destructive action requiring additional confirmation.
+- Do not delete or modify anything outside .glog.
+
+Process:
+1) Ensure both preserved files exist.
+- If any is missing, warn the user and do not delete .glog.
+2) Temporarily move both preserved files outside .glog.
+3) Remove the entire .glog directory.
+4) Recreate .glog.
+5) Move preserved files back.
+
+If cleanup still cannot be completed due to environment or policy enforcement, clearly report which extra .glog artifacts remain.
 
 # Implementation notes
 
