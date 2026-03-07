@@ -234,6 +234,38 @@ Rules:
 - Do NOT modify SARIF.
 - Log PR failures and continue.
 
+### 4.4 Verify remediation is correct for this codebase
+
+After implementing a fix, verify it using the strongest applicable checks available in the current environment.
+
+Verification rules:
+- Confirm the vulnerable pattern is no longer present at the reported location.
+- Re-read the affected code path and ensure the fix matches the SARIF finding and remediation intent.
+- Run the relevant build/compile command for the project, if available.
+- Run relevant existing tests, if present.
+
+Testing guidance:
+- Add a minimal targeted test only if it meaningfully verifies the remediation.
+- Prefer a unit test when the fix is isolated to business logic, validation, sanitization, parsing, authorization checks in service logic, or reusable helper methods.
+- Prefer an integration, web-layer, repository, or framework-level test when the issue depends on runtime wiring, HTTP behavior, persistence, templating/rendering, authentication/authorization configuration, or other framework behavior.
+- Do not create a unit test by default if it cannot realistically verify the security behavior that was fixed.
+- Choose the narrowest test type that can genuinely validate the remediation.
+- Do not add broad or unrelated test coverage.
+
+Behavioral verification:
+- Verify that malicious, unsafe, or invalid input is now rejected, sanitized, escaped, validated, or safely handled as appropriate.
+- Verify that expected valid behavior still works after the change.
+- Ensure the fix does not introduce regressions or break public API behavior.
+
+Verification result:
+- For each finding, record verification as one of:
+  - verified
+  - partially verified
+  - not fully verified
+
+If full verification is not possible in the current environment, clearly explain what was verified, what was not verified, and why.
+A finding must not be marked as fully remediated unless the agent has validated the changed code path and completed the strongest verification reasonably available.
+
 ## Step 5: Limited optimization
 
 - Optimize only touched code.
