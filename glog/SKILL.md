@@ -124,6 +124,7 @@ If neither is available, stop with a clear error.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - Treat remediation advice as a focused security remediation task.
+- If the selected remediation flow is local, changes must remain uncommitted in the local working tree only. Do NOT create commits, do NOT push, do NOT open pull requests, and do NOT perform any git write operation that records or publishes changes.
 - Validate whether each finding is genuine:
   - If NOT genuine: explain why, for additional review, then continue.
   - If genuine: remediate as suggested in SARIF as much as possible, adjusted to the project context/stack.
@@ -136,6 +137,7 @@ If neither is available, stop with a clear error.
   - Do not refactor unrelated code.
 - Generate a remediation report file inside `.glog` instead of only printing results in chat.
 - The report must be saved as `.glog/glog-remediation-report.md`.
+
 
 # Execution workflow
 
@@ -186,6 +188,9 @@ Instead, remediation guidance is located in:
 ## Step 4: Validate + Remediate (mode-aware, markdown-driven remediation)
 
 For each finding:
+
+### 4.0 Remediation flow guardrail
+- If remediation flow is local, apply fixes only in the local workspace and leave all changes uncommitted. Do not run git commit, git push, git merge, git rebase, git cherry-pick, or create/open PRs.
 
 ### 4.1 Validate whether the finding is genuine
 
