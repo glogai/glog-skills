@@ -1,5 +1,5 @@
 ---
-name: glog
+name: glog-diff
 description: Glog.AI scan + SARIF validation + focused remediation (no SARIF edits, no unrelated refactors). Writes report to .glog and cleans temporary artifacts while preserving SARIF and the remediation report.
 tools:
   - shell
