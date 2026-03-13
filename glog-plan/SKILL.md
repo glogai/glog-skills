@@ -31,7 +31,8 @@ Rules:
 - If it exists: perform a `git fetch` and `git reset --hard origin/main` to ensure it matches the configured ref.
 - The cached repo must contain `CLI.md`. If it does not, stop with a clear error.
 - Do not prompt the user for repo URL, ref, or path.
-- Do not write any secrets to disk. Do not echo tokens.
+- Do not write any secrets to disk.
+- Do not echo tokens.
 
 After preparing the cache repo, define:
 
@@ -48,9 +49,9 @@ Reply with a language value like: python, csharp, java, javascript, etc.
 If you want to skip, reply with: skip"
 
 Rules:
-- The user response is required (the agent must ask and wait).
+- The user response is required.
 - If the user replies with `skip` (or an empty/whitespace-only response), DO NOT pass `--lang` at all.
-- Otherwise pass `--lang <user_value>` exactly as provided (trim whitespace).
+- Otherwise pass `--lang <user_value>` exactly as provided after trimming whitespace.
 - Do not invent or default a language.
 - Keep other flags hardcoded:
   - `--client test`
@@ -88,7 +89,7 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
   - `--client test`
   - `--env dev`
   - `--sarif-format-type STANDARD`
-  - `--lang <user_value>` ONLY if the user provided a language (not skip/empty). Otherwise do not include `--lang` at all.
+  - `--lang <user_value>` ONLY if the user provided a language. Otherwise do not include `--lang`.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - This skill is strictly analysis-and-plan only.
@@ -205,7 +206,7 @@ From the CURRENT project root (the repo you want to scan), do:
   - `--client test`
   - `--env dev`
   - `--sarif-format-type STANDARD`
-  - Apply `--lang <value>` ONLY if the user provided a language (not skip/empty). If skipped, do not pass `--lang`.
+  - Apply `--lang <value>` ONLY if the user provided a language. If skipped, do not pass `--lang`.
 
 3) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target `<SCAN_TARGET_PATH>` exactly as specified by CLI.md.
 
@@ -308,7 +309,6 @@ The plan must be implementation-oriented, but must not modify code.
 ### 4.5 Verification guidance for the future fix
 
 For each finding, recommend how the future fix should be verified:
-
 - confirm the vulnerable pattern is no longer present at the reported location
 - re-read the affected code path and ensure the intended protection is actually enforced
 - run the relevant build/compile command for the project, if available
@@ -346,6 +346,151 @@ If uncertainty remains, prefer `needs manual review`.
 
 Create:
 - `.glog/glog-remediation-plan.md`
+
+# Markdown formatting rules for the report
+
+The remediation report must be formatted using strict Markdown structure to ensure high readability.
+
+Formatting rules:
+  - Use headings for major sections.
+  - Each finding must be its own subsection.
+  - Use tables for metadata fields.
+  - Use bullet lists for remediation plans and verification guidance.
+  - Use code blocks for file locations.
+  - Leave a blank line between sections.
+  - Never print large text blocks without structure.
+  - Do not collapse multiple fields into one paragraph.
+  - Do not print metadata outside the intended metadata tables unless absolutely necessary.
+  - Do not omit any subsection. If information is unavailable, write `not available`.
+  - If a finding has multiple locations, include all of them in the Location section.
+  - Be detailed but concise.
+  - Prefer short paragraphs and bullet lists over long prose.
+  - Keep each subsection focused on evidence from the code and SARIF only.
+  - Do not allow the Findings section to degrade into one long paragraph.
+
+The report must use the following structure exactly in this section order:
+
+# Glog Remediation Plan
+
+## Table of Contents
+- Scan Metadata
+- Scan Target Details
+- SARIF Summary
+- Findings
+- Overall Recommendations
+
+## Scan Metadata
+
+| Field | Value |
+|------|------|
+| Date/Time | <timestamp> |
+| Selected Language | <language or skipped> |
+| Client | test |
+| Env | dev |
+| SARIF Format Type | STANDARD |
+
+## Scan Target Details
+
+| Field | Value |
+|------|------|
+| Scan Target Type | <filtered workspace / full project fallback> |
+| Base Reference | <ref or not available> |
+| Changed Files Copied | <count> |
+| Full Project Fallback Required | <yes/no + short reason> |
+
+## SARIF Summary
+
+| Field | Value |
+|------|------|
+| Total Results | <count> |
+
+### Findings by Severity
+- error: <count>
+- warning: <count>
+- note: <count or 0>
+- other: <count or 0>
+
+### Findings by Rule ID
+- <ruleId>: <count>
+- <ruleId>: <count>
+
+## Findings
+
+For each finding, use the following section order.
+Do not skip any subsection.
+If a value is unavailable, write `not available`.
+
+---
+
+## Finding <ID> — <ruleId>
+
+### Metadata
+
+| Field | Value |
+|------|------|
+| Rule ID | <ruleId> |
+| Title | <title or not available> |
+| Severity | <severity or level or not available> |
+| Classification | <likely genuine / likely false positive / needs manual review> |
+
+### Location
+
+```text
+<file path>:<line or region>
+<file path>:<line or region>
+
+Issue Summary: |
+  Short summary extracted from the SARIF message.
+
+Security Analysis:
+  description: |
+    Explain clearly:
+      - what the vulnerability means
+      - how the code path behaves
+      - why the scanner flagged it
+      - whether existing mitigations are visible
+
+Visible Mitigations:
+  - "<mitigation or none>"
+
+Remediation Guidance Source:
+  - result.message.markdown
+  - rule.help.markdown
+  - rule.help.text
+  - manual inference
+
+Remediation Plan:
+  description: |
+    Provide a concrete implementation-oriented plan including:
+      - file(s) that should be reviewed
+      - likely root cause
+      - minimal safe change required
+      - reusable abstractions or safer alternatives to prefer
+      - patterns that must be avoided
+      - whether tests should be added
+
+Future Verification:
+  description: |
+    How the future fix should be validated:
+      - build / compile checks
+      - relevant tests
+      - security verification steps
+      - regression checks
+
+Remaining Uncertainty: |
+  Explain anything that could not be confirmed automatically.
+
+Overall Recommendations:
+  Highest Priority Findings:
+    - "<highest priority item>"
+    - "<highest priority item>"
+
+  Manual Review Recommended:
+    - "<finding or category requiring manual review>"
+    - "<finding or category requiring manual review>"
+
+  Common Patterns:
+    - "<recurring pattern across findings>"
 
 The report must contain:
 
