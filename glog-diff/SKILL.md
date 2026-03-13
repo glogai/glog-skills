@@ -39,6 +39,68 @@ After preparing the cache repo, define:
 
 and proceed with the workflow using `<GLOG_ACTION_PATH>/CLI.md`.
 
+# Interactive question ordering (STRICT)
+
+The agent must ask configuration questions sequentially, one at a time, and must wait for the user's answer before asking the next question.
+
+Rules:
+- NEVER ask multiple configuration questions in the same message.
+- Ask only one required configuration question at a time.
+- After asking a question, WAIT for the user's response.
+- Do not continue the workflow until that question has been answered with a valid value.
+- Do not ask the next question early.
+- Do not combine remediation strategy and scan language into one message.
+- Do not restate previously answered questions.
+- If a valid answer has already been provided for a configuration item, store it and reuse it.
+- NEVER ask the language question before remediation mode has been validly answered.
+- NEVER ask the language question more than once if a valid language answer has already been provided.
+- NEVER ask the remediation mode question more than once if a valid remediation answer has already been provided.
+- If the answer to the current question is invalid, ask ONLY that same question again.
+- Do not restart the full configuration flow when only one answer is invalid.
+- The agent must strictly track configuration state before proceeding.
+
+Configuration state to track:
+- `<REMEDIATION_MODE_STATUS>` = `missing` | `valid`
+- `<SCAN_LANGUAGE_STATUS>` = `missing` | `valid`
+
+Strict question order:
+1) remediation strategy
+2) scan language
+
+Execution protocol:
+
+Step A — remediation strategy
+- If `<REMEDIATION_MODE_STATUS>` is `missing`, ask ONLY the remediation strategy question.
+- Wait for the user response.
+- If the response is exactly `local` or `pr-per-finding`:
+  - store it as `<REMEDIATION_MODE>`
+  - set `<REMEDIATION_MODE_STATUS>` to `valid`
+- Otherwise:
+  - ask ONLY the remediation strategy question again
+  - do not ask the language question yet
+  - do not proceed to scanning
+
+Step B — scan language
+- Ask the language question ONLY after `<REMEDIATION_MODE_STATUS>` is `valid`.
+- If `<SCAN_LANGUAGE_STATUS>` is `missing`, ask ONLY the scan language question.
+- Wait for the user response.
+- If the response is `skip` or empty/whitespace-only:
+  - store `<SCAN_LANGUAGE>` = `skip`
+  - set `<SCAN_LANGUAGE_STATUS>` to `valid`
+- Otherwise:
+  - store the trimmed user response as `<SCAN_LANGUAGE>`
+  - set `<SCAN_LANGUAGE_STATUS>` to `valid`
+
+Step C — proceed
+- Proceed with scan preparation and execution ONLY after both:
+  - `<REMEDIATION_MODE_STATUS>` = `valid`
+  - `<SCAN_LANGUAGE_STATUS>` = `valid`
+
+Hard prohibition:
+- The agent must never ask both configuration questions in the same message.
+- The agent must never re-ask the scan language question after it has already been answered validly.
+- The agent must never re-ask the remediation mode question after it has already been answered validly.
+
 # Remediation strategy configuration (REQUIRED)
 
 Before doing ANY scan work, ask the user:
@@ -76,7 +138,17 @@ If `<REMEDIATION_MODE>` = `pr-per-finding`
   - Open a Pull Request targeting the original branch.
   - Continue to next finding.
 
+This question must be asked first.
+Follow the Interactive question ordering (STRICT) rules.
+Do not ask the scan language question before this question has been answered with a valid value.
+If this question has already been answered validly in the current session, do not ask it again.
+
 # Scan configuration
+
+This question must be asked second.
+Follow the Interactive question ordering (STRICT) rules.
+Ask this question only after remediation strategy has been answered with a valid value.
+If scan language has already been answered validly in the current session, do not ask it again.
 
 Before doing ANY scan work, ask the user:
 

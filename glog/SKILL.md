@@ -39,6 +39,52 @@ After preparing the cache repo, define:
 
 and proceed with the workflow using `<GLOG_ACTION_PATH>/CLI.md`.
 
+# Interactive question ordering (STRICT)
+
+The agent must ask configuration questions sequentially, one at a time.
+
+Rules:
+- NEVER ask multiple configuration questions in the same message.
+- Ask the first required question and WAIT for the user response.
+- Do not continue the workflow until the user has answered that question.
+- After receiving a valid answer, store the value and only then ask the next question.
+- Do not repeat a question if a valid answer has already been provided.
+- Do not ask the second question before the first one is answered.
+
+Strict order of questions:
+
+1️⃣ Remediation strategy  
+2️⃣ Scan language
+
+Execution protocol:
+
+Step A — Ask remediation strategy question only.
+
+Wait for the user response.
+
+If the response is valid (`local` or `pr-per-finding`):
+- store `<REMEDIATION_MODE>`
+- proceed to Step B
+
+If invalid:
+- ask the remediation strategy question again
+- do NOT continue
+
+Step B — Ask scan language question only.
+
+Wait for the user response.
+
+If the response is valid:
+- store `<SCAN_LANGUAGE>`
+- proceed to scanning workflow
+
+If invalid:
+- ask the scan language question again
+- do NOT restart Step A
+
+The agent must never ask both questions in the same message.
+The agent must never re-ask the language question if it was already answered.
+
 # Remediation strategy configuration (REQUIRED)
 
 Before doing ANY scan work, ask the user:
@@ -75,7 +121,13 @@ If `<REMEDIATION_MODE>` = `pr-per-finding`
   - Open a Pull Request targeting the original branch.
   - Continue to next finding.
 
+This question must be asked first according to the Interactive question ordering rules.
+Do not ask any other configuration question before this one is answered.
+
 # Scan configuration
+
+This question must be asked only AFTER the remediation strategy question has been answered.
+Follow the Interactive question ordering rules strictly.
 
 Before doing ANY scan work, ask the user:
 
