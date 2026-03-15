@@ -14,6 +14,10 @@ Hardcoded repository:
 - Repo URL: `https://github.com/glogai/glog-action`
 - Branch/ref: `main`
 
+For all Glog skills and actions use environment variables available in the user's shell environment.
+
+These variables may be defined in shell configuration files such as ~/.profile, ~/.zprofile, ~/.bash_profile, or configured via system environment variables (for example on Windows).
+
 Cache location (prefer in this order):
 1) If `$XDG_CACHE_HOME` is set: `$XDG_CACHE_HOME/glog/glog-action`
 2) Else: `~/.cache/glog/glog-action`
