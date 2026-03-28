@@ -172,7 +172,7 @@ Rules:
 
 # Purpose
 
-Use glog-action CLI instructions to run a scan for the CURRENT project. When possible, scan only files changed in the current branch relative to the best available base reference by preparing a temporary filtered workspace. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, and apply focused remediations where genuine.
+Use glog-action CLI instructions to run a scan for the CURRENT project. When possible, scan only files changed in the current branch relative to the best available base reference by passing them through the `--files` flag of `glog.sh`. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, and apply focused remediations where genuine.
 
 # Required environment
 
@@ -192,7 +192,7 @@ If neither is available, stop with a clear error.
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
-- Prefer scanning only changed files by using a temporary filtered workspace when a reliable base reference can be determined.
+- Prefer scanning only changed files by passing them through the `--files` flag when a reliable base reference can be determined.
 - Fall back to a full-project scan only when changed-file scanning is not reliable or not possible.
 - Run scan with the hardcoded flags:
   - `--client test`
@@ -204,7 +204,7 @@ If neither is available, stop with a clear error.
 - Treat remediation advice as a focused security remediation task.
 - If the selected remediation flow is `local`, changes must remain uncommitted in the local working tree only. Do NOT create commits, do NOT push, do NOT open pull requests, and do NOT perform any git write operation that records or publishes changes.
 - If the selected remediation flow is `pr-per-finding`, isolate each genuine finding in its own branch and PR.
-- Validate whether each finding is genuine:
+- Review each finding in project context:
   - If NOT genuine: explain why, for additional review, then continue.
   - If genuine: remediate as suggested in SARIF as much as possible, adjusted to the project context and stack.
 - Do not duplicate code:
@@ -217,6 +217,12 @@ If neither is available, stop with a clear error.
 - Generate a remediation report file inside `.glog` instead of only printing results in chat.
 - The report must be saved as `.glog/glog-remediation-report.md`.
 
+Changed-files scan behavior:
+- If a reliable base reference is available and at least one usable changed file is found, build `--files` as a comma-separated relative path list and pass it to `glog.sh scan`.
+- If no usable changed files are found, do not pass `--files` and fall back to a full-project scan.
+- Never create a temporary source directory for scan scoping.
+- Never copy changed files into a local temporary scan folder.
+
 # Execution workflow
 
 ## Step 1: Read glog-action CLI.md (source of truth)
@@ -227,26 +233,23 @@ If neither is available, stop with a clear error.
 - Confirm how the scan target path should be supplied.
 - Confirm how the SARIF output is expected to land in the current project's `.glog/` directory.
 
-## Step 1.5: Prepare filtered workspace from changed files
+## Step 1.5: Prepare changed file list for --files
 
-Before running the scan, prepare a temporary filtered workspace that contains only files changed in the current branch relative to the best available base reference.
+Before running the scan, prepare a list of changed files in the current branch relative to the best available base reference.
 
 Goal:
 - Scan only the developer's current branch changes when possible.
 - Reduce noise from unrelated code.
 - Avoid unpredictable behavior by falling back safely when change detection is not reliable.
 
-Temporary workspace:
-- Create a temporary directory inside the current project root:
-  - `.glog-filtered-src/`
-
 Rules:
-- Preserve relative paths when copying files.
+- Do not create a temporary filtered workspace.
+- Do not copy files into any local temp directory for scan scoping.
+- Build a comma-separated list of relative file paths and pass it to `--files`.
 - Include only changed files that currently exist in the working tree.
-- Do not copy deleted files.
-- Do not modify the original project files during workspace preparation.
-- Do not use git commit, git push, or PR operations during this step.
-- Do not include `.git`, `.glog`, or `.glog-filtered-src` as scan source content.
+- Do not include deleted files.
+- Do not include directories.
+- Do not include files under `.git/` or `.glog/`.
 - If renamed files are reported by git, include the new file path if it exists in the working tree.
 - If no reliable base reference can be determined, do not guess aggressively; fall back to scanning the full project and document the fallback in the report.
 
@@ -267,32 +270,26 @@ Recommended diff scope:
 - Exclude:
   - Deleted files
   - Missing paths
-  - Generated artifacts inside `.glog` or `.glog-filtered-src`
+  - Generated artifacts inside `.glog`
 
-Workspace preparation process:
-1) Remove any previous `.glog-filtered-src/` directory.
-2) Recreate `.glog-filtered-src/`.
-3) Determine the best available base reference.
-4) Collect changed files using git diff.
-5) Filter the changed paths:
+Changed file list preparation process:
+1) Determine the best available base reference.
+2) Collect changed files using git diff.
+3) Filter the changed paths:
    - keep only files that currently exist
    - skip directories
-   - skip files under `.git/`, `.glog/`, and `.glog-filtered-src/`
-6) For each remaining changed file:
-   - create its parent directory inside `.glog-filtered-src/`
-   - copy the file into the filtered workspace preserving relative path
-7) If no usable changed files are found:
+   - skip files under `.git/` and `.glog/`
+4) Convert the remaining paths into a comma-separated relative file list suitable for `--files`
+5) If no usable changed files are found:
    - do not fail
    - fall back to scanning the full current project
    - record this fallback in the report
 
-Verification of filtered workspace:
-- If `.glog-filtered-src/` contains at least one copied file, use it as the scan target.
-- Otherwise use the current project root as the scan target.
-
 Define:
-- `<SCAN_TARGET_PATH>` = `.glog-filtered-src` if filtered workspace is usable
-- otherwise `<SCAN_TARGET_PATH>` = current project root
+- `<SCAN_FILES_CSV>` = comma-separated changed file list if usable
+- otherwise empty
+- `<SCAN_MODE>` = `changed-files` if `<SCAN_FILES_CSV>` is usable
+- otherwise `full-project`
 
 ## Step 2: Clean .glog and run scan
 
@@ -303,17 +300,16 @@ From the CURRENT project root (the repo you want to scan), do:
 - Recreate `.glog/` directory
 
 2) Execute scan using the invocation defined in CLI.md.
-- Use `<SCAN_TARGET_PATH>` as the scan path.
-- `<SCAN_TARGET_PATH>` is:
-  - `.glog-filtered-src` if changed files were successfully prepared
-  - otherwise the current project root
+- Always use the current project root as the scan path.
+- If `<SCAN_MODE>` = `changed-files`, pass `--files <SCAN_FILES_CSV>`.
+- If `<SCAN_MODE>` = `full-project`, do not pass `--files`.
 - Apply flags exactly:
   - `--client test`
   - `--env dev`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language (not skip/empty). If skipped, do not pass `--lang`.
 
-3) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target `<SCAN_TARGET_PATH>` exactly as specified by CLI.md.
+3) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the CURRENT project root exactly as specified by CLI.md.
 
 4) Ensure that the output SARIF file ends up at:
 - `.glog/glog-scan.sarif` in the CURRENT project.
@@ -321,9 +317,9 @@ From the CURRENT project root (the repo you want to scan), do:
 After scan:
 - Verify `.glog/glog-scan.sarif` exists.
 - If missing, stop and show the scan command output and your best diagnosis.
-- Record whether the scan target was:
-  - filtered workspace only
-  - full project fallback
+- Record whether the scan mode was:
+  - changed-files via `--files`
+  - full-project fallback
 
 ## Step 3: Analyze findings from SARIF (read-only)
 
@@ -445,7 +441,7 @@ Verification result:
 If full verification is not possible in the current environment, clearly explain what was verified, what was not verified, and why.
 A finding must not be marked as fully remediated unless the agent has validated the changed code path and completed the strongest verification reasonably available.
 
-### 4.5 If remediation guidance is incorrect or incomplete, adapt it
+### 4.5 Apply the remediation guidance in a project-appropriate way
 
 If the markdown remediation does NOT fit the actual code/context (for example wrong framework assumption, wrong API usage, breaking change, or not actually resolving the issue):
 
@@ -476,9 +472,9 @@ The report must contain:
   - env
   - remediation mode used: `<REMEDIATION_MODE>`
 - Scan target details:
-  - scan target type (`filtered workspace` or `full project fallback`)
+  - scan mode (`changed-files via --files` or `full-project fallback`)
   - base reference used for change detection, if available
-  - number of changed files copied into the filtered workspace, if available
+  - number of changed files selected for `--files`, if available
   - whether fallback to full-project scan was required
 - Summary of findings from `.glog/glog-scan.sarif`
 - For each finding:
@@ -506,27 +502,26 @@ After saving the report file:
 
 ## Cleanup permission boundary
 
-The agent is explicitly allowed to delete files and directories inside the project's `.glog` directory and the temporary `.glog-filtered-src` directory as part of this workflow cleanup.
+The agent is explicitly allowed to delete files and directories inside the project's `.glog` directory as part of this workflow cleanup.
 
 This deletion is intentional housekeeping and not destructive user data removal.
 
 Allowed cleanup scope:
 - `.glog/**`
-- `.glog-filtered-src/**`
 
 Rules:
-- Never delete files outside `.glog` or `.glog-filtered-src`.
-- Only generated scan/remediation artifacts and temporary filtered workspace contents may be removed.
+- Never delete files outside `.glog`.
+- Only generated scan/remediation artifacts may be removed.
 - The preserved files must remain intact:
   - `.glog/glog-scan.sarif`
   - `.glog/glog-remediation-report.md`
 
 Policy note:
-- Removal of extra `.glog` artifacts and removal of `.glog-filtered-src` are explicitly permitted for this skill and must not be blocked as destructive operations.
+- Removal of extra `.glog` artifacts is explicitly permitted for this skill and must not be blocked as destructive operations.
 
 ## Step 7: Cleanup temporary artifacts (preserve SARIF and report)
 
-This workflow explicitly authorizes cleanup inside `.glog` and `.glog-filtered-src`.
+This workflow explicitly authorizes cleanup inside `.glog`.
 
 Files that must be preserved:
 - `.glog/glog-scan.sarif`
@@ -534,10 +529,9 @@ Files that must be preserved:
 
 Cleanup rules:
 - Delete any other file or subdirectory inside `.glog`.
-- `.glog-filtered-src` is temporary and may be removed completely.
 - This deletion is allowed and expected for this skill.
 - Do not treat removal of extra temporary artifacts as a destructive action requiring additional confirmation.
-- Do not delete or modify anything outside `.glog` or `.glog-filtered-src`.
+- Do not delete or modify anything outside `.glog`.
 - Cleanup must not use git commands that create, record, or publish changes.
 
 Process:
@@ -547,7 +541,6 @@ Process:
 3) Remove the entire `.glog` directory.
 4) Recreate `.glog`.
 5) Move preserved files back.
-6) Remove `.glog-filtered-src` completely if it exists.
 
 If cleanup still cannot be completed due to environment or policy enforcement, clearly report which extra artifacts remain.
 
@@ -557,12 +550,11 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 - Never print tokens.
 - Do not modify SARIF after scan.
 - Use safe shell practices.
-- To prepare the filtered workspace, use git diff against the best available base reference and copy only changed files that still exist in the working tree.
+- To prepare the `--files` input, use git diff against the best available base reference and collect only changed files that still exist in the working tree.
 - Prefer diff filters equivalent to Added, Copied, Modified, and Renamed files.
-- Preserve directory structure when copying into `.glog-filtered-src`.
+- Build a comma-separated list of relative file paths for `--files`.
 - If no changed files are detected, or if no suitable base reference is available, fall back to scanning the full project and document the fallback in the report.
-- Do not scan `.git`, `.glog`, or `.glog-filtered-src` as source content unless explicitly required by the project layout.
-- After the workflow completes, `.glog-filtered-src` may be removed as a temporary artifact.
+- Do not include files under `.git/` or `.glog/` in the `--files` list unless explicitly required by the project layout.
 - If the current branch has an upstream tracking branch, verify that it is a sensible comparison base before using it as the base reference.
 - If the repository state is too unusual to determine changed files safely, prefer full-project fallback over risky assumptions.
 - In `local` mode, do not stage or commit report files.
