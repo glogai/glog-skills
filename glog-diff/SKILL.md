@@ -132,7 +132,7 @@ If `<REMEDIATION_MODE>` = `local`
 → Leave changes uncommitted in the working tree.
 
 If `<REMEDIATION_MODE>` = `pr-per-finding`
-→ For EACH genuine finding:
+→ For EACH genuine vulnerability finding selected for remediation:
   - Create a new branch:
     `glog/remediation/<sanitized-ruleId>-<short-hash>`
   - Apply only the fix related to that finding.
@@ -172,7 +172,7 @@ Rules:
 
 # Purpose
 
-Use glog-action CLI instructions to run a scan for the CURRENT project. When possible, scan only files changed in the current branch relative to the best available base reference by passing them through the `--files` flag of `glog.sh`. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, and apply focused remediations where genuine.
+Use glog-action CLI instructions to run a scan for the CURRENT project. When possible, scan only files changed in the current branch relative to the best available base reference. For Java scans, run the scan against the full project to preserve build/compile context, then restrict remediation scope to findings that belong to changed files only. Then analyze findings from `.glog/glog-scan.sarif`, review only the findings selected for remediation scope, and apply focused remediations.
 
 # Required environment
 
@@ -192,8 +192,13 @@ If neither is available, stop with a clear error.
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
-- Prefer scanning only changed files by passing them through the `--files` flag when a reliable base reference can be determined.
-- Fall back to a full-project scan only when changed-file scanning is not reliable or not possible.
+- For Java scans:
+  - do NOT use `--files` for scan execution
+  - run the scan against the full current project path
+  - after SARIF is produced, restrict review/remediation/reporting scope to findings whose referenced file paths belong to the changed-file set
+- For non-Java scans:
+  - prefer scanning only changed files by passing them through the `--files` flag when a reliable base reference can be determined
+  - fall back to a full-project scan only when changed-file scanning is not reliable or not possible
 - Run scan with the hardcoded flags:
   - `--client test`
   - `--env dev`
@@ -203,10 +208,10 @@ If neither is available, stop with a clear error.
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - Treat remediation advice as a focused security remediation task.
 - If the selected remediation flow is `local`, changes must remain uncommitted in the local working tree only. Do NOT create commits, do NOT push, do NOT open pull requests, and do NOT perform any git write operation that records or publishes changes.
-- If the selected remediation flow is `pr-per-finding`, isolate each genuine finding in its own branch and PR.
-- Review each finding in project context:
-  - If NOT genuine: explain why, for additional review, then continue.
-  - If genuine: remediate as suggested in SARIF as much as possible, adjusted to the project context and stack.
+- If the selected remediation flow is `pr-per-finding`, isolate each selected genuine finding in its own branch and PR.
+- Review each selected finding in project context:
+  - If not applicable in context: explain why for additional review, then continue.
+  - If applicable: remediate as suggested in SARIF as much as possible, adjusted to the project context and stack.
 - Do not duplicate code:
   - Reuse already existing methods/utilities if possible.
   - Do not duplicate modules and do not copy-paste logic across modules.
@@ -216,10 +221,18 @@ If neither is available, stop with a clear error.
   - Do not refactor unrelated code.
 - Generate a remediation report file inside `.glog` instead of only printing results in chat.
 - The report must be saved as `.glog/glog-remediation-report.md`.
+- Only findings within remediation scope may be remediated or counted as remediation candidates.
+- Findings outside remediation scope may be mentioned only as out-of-scope scan results when needed for clarity, but must not be remediated.
 
-Changed-files scan behavior:
-- If a reliable base reference is available and at least one usable changed file is found, build `--files` as a comma-separated relative path list and pass it to `glog.sh scan`.
-- If no usable changed files are found, do not pass `--files` and fall back to a full-project scan.
+Changed-file scope behavior:
+- Prepare the changed-file set whenever a reliable base reference is available.
+- The changed-file set is used in two different ways:
+  - for non-Java scans: as the source of `--files` when usable
+  - for Java scans: as the post-scan filtering scope for SARIF findings
+- If no usable changed files are found:
+  - do not fail
+  - fall back to full-project remediation scope
+  - document the fallback in the report
 - Never create a temporary source directory for scan scoping.
 - Never copy changed files into a local temporary scan folder.
 
@@ -233,25 +246,26 @@ Changed-files scan behavior:
 - Confirm how the scan target path should be supplied.
 - Confirm how the SARIF output is expected to land in the current project's `.glog/` directory.
 
-## Step 1.5: Prepare changed file list for --files
+## Step 1.5: Prepare changed file list and remediation scope
 
 Before running the scan, prepare a list of changed files in the current branch relative to the best available base reference.
 
 Goal:
-- Scan only the developer's current branch changes when possible.
-- Reduce noise from unrelated code.
+- Prefer focusing on the developer's current branch changes.
+- Reduce remediation noise from unrelated code.
 - Avoid unpredictable behavior by falling back safely when change detection is not reliable.
+- Preserve full-project scan behavior for Java when compile/build context is needed.
 
 Rules:
 - Do not create a temporary filtered workspace.
 - Do not copy files into any local temp directory for scan scoping.
-- Build a comma-separated list of relative file paths and pass it to `--files`.
+- Build a changed-file set of relative file paths.
 - Include only changed files that currently exist in the working tree.
 - Do not include deleted files.
 - Do not include directories.
 - Do not include files under `.git/` or `.glog/`.
 - If renamed files are reported by git, include the new file path if it exists in the working tree.
-- If no reliable base reference can be determined, do not guess aggressively; fall back to scanning the full project and document the fallback in the report.
+- If no reliable base reference can be determined, do not guess aggressively; fall back safely and document the fallback in the report.
 
 How to determine the best available base reference:
 - First, prefer the upstream tracking branch of the current branch, if it exists and is a suitable comparison base.
@@ -272,24 +286,36 @@ Recommended diff scope:
   - Missing paths
   - Generated artifacts inside `.glog`
 
-Changed file list preparation process:
+Changed file preparation process:
 1) Determine the best available base reference.
 2) Collect changed files using git diff.
 3) Filter the changed paths:
    - keep only files that currently exist
    - skip directories
    - skip files under `.git/` and `.glog/`
-4) Convert the remaining paths into a comma-separated relative file list suitable for `--files`
+4) Build:
+   - `<CHANGED_FILES_SET>` = normalized set of relative changed file paths
+   - `<SCAN_FILES_CSV>` = comma-separated changed file list suitable for `--files` when non-Java scan mode uses it
 5) If no usable changed files are found:
    - do not fail
-   - fall back to scanning the full current project
+   - fall back safely
    - record this fallback in the report
 
 Define:
-- `<SCAN_FILES_CSV>` = comma-separated changed file list if usable
-- otherwise empty
-- `<SCAN_MODE>` = `changed-files` if `<SCAN_FILES_CSV>` is usable
-- otherwise `full-project`
+- `<CHANGED_FILES_SET>` = normalized relative changed-file set if usable, otherwise empty
+- `<SCAN_FILES_CSV>` = comma-separated changed file list if usable and needed for non-Java scan execution, otherwise empty
+- `<SCAN_MODE>`:
+  - `full-project-java` if selected scan language is `java`
+  - `changed-files` if selected scan language is not `java` and `<SCAN_FILES_CSV>` is usable
+  - `full-project-fallback` otherwise
+- `<REMEDIATION_SCOPE>`:
+  - `changed-files-only` if `<CHANGED_FILES_SET>` is usable
+  - `full-project-fallback` otherwise
+
+Normalization rules for later SARIF filtering:
+- Normalize both changed-file paths and SARIF result paths to comparable relative project paths where reasonably possible.
+- Match findings to the changed-file set using normalized relative paths.
+- If a SARIF path cannot be normalized reliably, do not assume a match.
 
 ## Step 2: Clean .glog and run scan
 
@@ -301,8 +327,9 @@ From the CURRENT project root (the repo you want to scan), do:
 
 2) Execute scan using the invocation defined in CLI.md.
 - Always use the current project root as the scan path.
+- If `<SCAN_MODE>` = `full-project-java`, do not pass `--files`.
 - If `<SCAN_MODE>` = `changed-files`, pass `--files <SCAN_FILES_CSV>`.
-- If `<SCAN_MODE>` = `full-project`, do not pass `--files`.
+- If `<SCAN_MODE>` = `full-project-fallback`, do not pass `--files`.
 - Apply flags exactly:
   - `--client test`
   - `--env dev`
@@ -318,8 +345,9 @@ After scan:
 - Verify `.glog/glog-scan.sarif` exists.
 - If missing, stop and show the scan command output and your best diagnosis.
 - Record whether the scan mode was:
-  - changed-files via `--files`
-  - full-project fallback
+  - `full-project-java`
+  - `changed-files`
+  - `full-project-fallback`
 
 ## Step 3: Analyze findings from SARIF (read-only)
 
@@ -331,7 +359,26 @@ After scan:
   - locations (file + line/region)
   - suggested remediation text (if present)
 
-## Step 3.1: Determine remediation instructions source (SARIF)
+## Step 3.1: Restrict remediation scope after scan
+
+Before any review or remediation work begins, determine which SARIF findings are in remediation scope.
+
+Rules:
+- If `<REMEDIATION_SCOPE>` = `changed-files-only`, include only findings whose referenced file path matches a path in `<CHANGED_FILES_SET>`.
+- If a finding contains multiple locations, include the finding only if at least one primary relevant code location matches the changed-file set.
+- If `<REMEDIATION_SCOPE>` = `full-project-fallback`, all findings are in scope.
+- Do not modify SARIF while filtering scope.
+- Preserve the original SARIF file unchanged.
+- Create an internal working set:
+  - `<IN_SCOPE_FINDINGS>`
+  - `<OUT_OF_SCOPE_FINDINGS>`
+
+Behavior:
+- Only `<IN_SCOPE_FINDINGS>` may be reviewed for applicability, remediated, verified, or included as remediation candidates.
+- `<OUT_OF_SCOPE_FINDINGS>` must not be remediated.
+- The report must clearly distinguish total scan findings from in-scope findings when remediation scope is restricted.
+
+## Step 3.2: Determine remediation instructions source (SARIF)
 
 Important: The SARIF file does NOT populate `result.fixes`.
 
@@ -347,9 +394,9 @@ Rules:
   - the vulnerability type described by the ruleId and message
 - If there is no clear remediation text, treat the finding as `needs manual review` and explain why.
 
-## Step 4: Validate + Remediate (mode-aware, markdown-driven remediation)
+## Step 4: Review and apply remediation (mode-aware, markdown-driven remediation)
 
-For each finding:
+For each finding in `<IN_SCOPE_FINDINGS>`:
 
 ### 4.0 Remediation flow guardrail
 
@@ -362,18 +409,18 @@ For each finding:
   - `git cherry-pick`
   - PR creation commands
   - any git write operation that records or publishes changes
-- If remediation flow is `pr-per-finding`, isolate each genuine finding and do not combine fixes across findings.
+- If remediation flow is `pr-per-finding`, isolate each in-scope applicable finding and do not combine fixes across findings.
 
-### 4.1 Validate whether the finding is genuine
+### 4.1 Review each finding in project context
 
 - Inspect the exact location(s) in code referenced by the SARIF.
-- Consider runtime behavior, framework defaults, and existing mitigations.
-- If NOT genuine:
+- Consider surrounding implementation context and existing safeguards.
+- If the finding does not appear applicable in context:
   - Explain why clearly for additional review.
   - Reference the relevant code paths and reasoning.
   - Continue to the next finding.
 
-### 4.2 Extract remediation steps
+### 4.2 Identify applicable remediation guidance
 
 - Parse `result.message.markdown` and identify actionable remediation steps.
 - If remediation is vague, infer a concrete plan that stays consistent with the intent of the markdown guidance.
@@ -386,11 +433,11 @@ If `<REMEDIATION_MODE>` = `local`:
 - Apply fixes in the current working tree only.
 - Keep all changes local and uncommitted.
 - Do not create branches, commits, pushes, or pull requests.
-- Continue through all findings in the same working tree.
+- Continue through all in-scope findings in the same working tree.
 
 If `<REMEDIATION_MODE>` = `pr-per-finding`:
 
-For EACH genuine finding:
+For EACH in-scope applicable finding:
 
 1) Ensure the working tree is clean before starting that finding's isolated branch flow.
 2) Create branch:
@@ -409,18 +456,18 @@ Rules:
 - Log PR failures and continue to the next finding.
 - If a finding cannot be safely isolated for PR creation, document the reason clearly.
 
-### 4.4 Verify remediation is correct for this codebase
+### 4.4 Confirm the applied changes fit the codebase
 
 After implementing a fix, verify it using the strongest applicable checks available in the current environment.
 
 Verification rules:
-- Confirm the vulnerable pattern is no longer present at the reported location.
+- Confirm the reported issue has been addressed at the referenced location.
 - Re-read the affected code path and ensure the fix matches the SARIF finding and remediation intent.
 - Run the relevant build/compile command for the project, if available.
 - Run relevant existing tests, if present.
 
 Testing guidance:
-- Add a minimal targeted test only if it meaningfully verifies the remediation.
+- Add a narrowly scoped validation step only when it provides meaningful confirmation.
 - Prefer a unit test when the fix is isolated to business logic, validation, sanitization, parsing, authorization checks in service logic, or reusable helper methods.
 - Prefer an integration, web-layer, repository, or framework-level test when the issue depends on runtime wiring, HTTP behavior, persistence, templating/rendering, authentication/authorization configuration, or other framework behavior.
 - Do not create a unit test by default if it cannot realistically verify the security behavior that was fixed.
@@ -443,7 +490,7 @@ A finding must not be marked as fully remediated unless the agent has validated 
 
 ### 4.5 Apply the remediation guidance in a project-appropriate way
 
-If the markdown remediation does NOT fit the actual code/context (for example wrong framework assumption, wrong API usage, breaking change, or not actually resolving the issue):
+If the markdown remediation does NOT fit the actual code/context:
 
 - Modify the remediation to a correct variant for this project, while keeping the original intent.
 - Clearly document in the report:
@@ -471,25 +518,29 @@ The report must contain:
   - client
   - env
   - remediation mode used: `<REMEDIATION_MODE>`
-- Scan target details:
-  - scan mode (`changed-files via --files` or `full-project fallback`)
-  - base reference used for change detection, if available
-  - number of changed files selected for `--files`, if available
-  - whether fallback to full-project scan was required
-- Summary of findings from `.glog/glog-scan.sarif`
-- For each finding:
-  - genuine vs not genuine
+- Scan Target Details:
+  - Base reference used for change detection: <BASE_REF or none>
+  - Changed files identified: <COUNT>
+  - Findings selected for review/remediation: <changed files only | full project>
+  - Fallback to full-project scope required: <yes | no>
+- SARIF summary:
+  - total number of scan findings
+  - number of in-scope findings
+  - number of out-of-scope findings
+- For each in-scope finding:
+  - applicable vs not applicable in context
   - rationale
   - files impacted
   - remediation performed (if any)
   - remediation source: `result.message.markdown` or fallback source
-  - whether remediation guidance was adapted
-  - if adapted: what changed and why
+  - whether remediation guidance was adjusted
+  - if adjusted: what changed and why
   - verification performed
   - test type used, if any: `unit`, `integration`, `web`, `repository`, or `none`
   - verification result: `verified`, `partially verified`, or `not fully verified`
   - evidence: build output, test results, code-path inspection, or reasoning
   - remaining risk or limitations, if any
+- Any out-of-scope findings summary, if relevant
 - List of code changes
 - Any follow-up recommendations
 - If `pr-per-finding`:
@@ -550,11 +601,13 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 - Never print tokens.
 - Do not modify SARIF after scan.
 - Use safe shell practices.
-- To prepare the `--files` input, use git diff against the best available base reference and collect only changed files that still exist in the working tree.
+- Use git diff against the best available base reference to collect changed files that still exist in the working tree.
 - Prefer diff filters equivalent to Added, Copied, Modified, and Renamed files.
-- Build a comma-separated list of relative file paths for `--files`.
-- If no changed files are detected, or if no suitable base reference is available, fall back to scanning the full project and document the fallback in the report.
-- Do not include files under `.git/` or `.glog/` in the `--files` list unless explicitly required by the project layout.
+- Build a normalized changed-file set for remediation scope decisions.
+- Only for non-Java scans, build a comma-separated list of relative file paths for `--files` when changed-file scan execution is applicable.
+- For Java scans, do not use `--files` for scan execution; instead run a full-project scan and filter SARIF findings afterward to the changed-file set.
+- If no changed files are detected, or if no suitable base reference is available, fall back safely and document the fallback in the report.
+- Do not include files under `.git/` or `.glog/` in the changed-file set unless explicitly required by the project layout.
 - If the current branch has an upstream tracking branch, verify that it is a sensible comparison base before using it as the base reference.
 - If the repository state is too unusual to determine changed files safely, prefer full-project fallback over risky assumptions.
 - In `local` mode, do not stage or commit report files.
