@@ -518,13 +518,11 @@ The report must contain:
   - client
   - env
   - remediation mode used: `<REMEDIATION_MODE>`
-- Scan target details:
-  - scan mode (`full-project-java`, `changed-files`, or `full-project-fallback`)
-  - base reference used for change detection, if available
-  - number of changed files identified, if available
-  - whether `--files` was used for scan execution
-  - remediation scope (`changed-files-only` or `full-project-fallback`)
-  - whether fallback to full-project scope was required
+- Scan Target Details:
+  - Base reference used for change detection: <BASE_REF or none>
+  - Changed files identified: <COUNT>
+  - Findings selected for review/remediation: <changed files only | full project>
+  - Fallback to full-project scope required: <yes | no>
 - SARIF summary:
   - total number of scan findings
   - number of in-scope findings
