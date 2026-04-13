@@ -97,6 +97,31 @@ Rules:
   - `--env dev`
   - `--sarif-format-type STANDARD`
 
+	
+# Vulnerability database selection
+Before doing ANY scan work, ask the user:
+"Which vulnerability database should be used for SCA scanning?
+Reply with one of:
+small → Use the default smaller application-only vulnerability database.
+large → Use the larger full vulnerability database with application + OS advisories.
+Type exactly: small or large"
+Rules:
+- The user response is REQUIRED.
+- If the response is anything other than `small` or `large`, ask again.
+- Store the value as `<VDB_MODE>`.
+- Do not start scan setup or scan execution until `<VDB_MODE>` is valid.
+Behavior:
+- If `<VDB_MODE>` = `small`:
+  - do not set any additional VDB environment variables
+  - use the scanner's default VDB behavior
+- If `<VDB_MODE>` = `large`:
+  - set the following environment variables in the same shell process before invoking the scan:
+    - `GLOG_DEPSCAN_VDB_VOLUME=glog-depscan-vdb-full`
+    - `VDB_APP_ONLY=false`
+    - `VDB_HOME=/vdb`
+    - `VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz:v6`
+    - `VDB_AGE_HOURS=0`
+
 # Required environment
 
 Use global environment variables.
@@ -139,6 +164,12 @@ The skill must avoid:
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog`.
+- Before scan setup or scan execution, the user must choose the SCA vulnerability database mode:
+  - `small`
+  - `large`
+- Only when the user chooses `large`, set the full VDB environment variables before invoking the scanner.
+- Do not set full VDB environment variables when the user chooses `small`.
+- Do not mention internal VDB environment variable names in the final remediation report unless needed for troubleshooting.
 - Run scan with the hardcoded flags:
   - `--client test`
   - `--env dev`
@@ -286,9 +317,24 @@ From the CURRENT project root (the repo to scan), do:
   - `--sarif-format-type STANDARD`
   - `--lang oss`
 
-3) If `CLI.md` expects the runner script to be executed from inside the `glog-action` repo, run it from there but target the CURRENT project root exactly as specified by `CLI.md`.
+Before invoking the scan command:
 
-4) Ensure that the output SARIF file ends up at:
+If `<VDB_MODE>` = `large`, set these environment variables in the same shell process that runs the scan:
+
+```bash
+export GLOG_DEPSCAN_VDB_VOLUME=glog-depscan-vdb-full
+export VDB_APP_ONLY=false
+export VDB_HOME=/vdb
+export VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz:v6
+export VDB_AGE_HOURS=0
+
+If <VDB_MODE> = small, do not set these variables.
+
+Then run the scan command from CLI.md.
+
+If CLI.md expects the runner script to be executed from inside the glog-action repo, run it from there but target the CURRENT project root exactly as specified by CLI.md.
+
+Ensure that the output SARIF file ends up at:
 
 `.glog/glog-scan.sarif`
 
@@ -510,6 +556,7 @@ Use this structure exactly.
 - Working directory
 - Scan type: `software-composition-analysis`
 - Engine: `oss`
+- Vulnerability database mode: `<small | large>`
 - Output SARIF path
 - Report file path
 
@@ -659,3 +706,5 @@ The report should focus on:
 - If the repository contains multiple package managers or manifests, note that clearly in the report.
 - If dependency context is ambiguous, classify as `needs manual review`.
 - Do not infer more certainty than the scan output and repository evidence support.
+- Only when <VDB_MODE> = large, set the large VDB environment variables in the same shell process immediately before running the scan command.
+- When <VDB_MODE> = small, do not set any additional VDB environment variables and rely on the default scanner behavior.
