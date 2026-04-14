@@ -119,7 +119,7 @@ Behavior:
     - `GLOG_DEPSCAN_VDB_VOLUME=glog-depscan-vdb-full`
     - `VDB_APP_ONLY=false`
     - `VDB_HOME=/vdb`
-    - `VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz:v6`
+    - `VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz-10y:v6`
     - `VDB_AGE_HOURS=0`
 
 # Required environment
@@ -325,7 +325,7 @@ If `<VDB_MODE>` = `large`, set these environment variables in the same shell pro
 export GLOG_DEPSCAN_VDB_VOLUME=glog-depscan-vdb-full
 export VDB_APP_ONLY=false
 export VDB_HOME=/vdb
-export VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz:v6
+export VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz-10y:v6
 export VDB_AGE_HOURS=0
 
 If <VDB_MODE> = small, do not set these variables.
