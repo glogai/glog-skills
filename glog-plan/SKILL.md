@@ -24,10 +24,25 @@ Cache location (prefer in this order):
 3) If home is not available: `/tmp/glog/glog-action`
 
 Auth rules (private repo):
-- Use `GITHUB_TOKEN` for git HTTPS authentication.
+- Use `GITHUB_TOKEN` for GitHub HTTPS authentication.
+- Use `GITHUB_USER` as the GitHub username if available.
+- If `GITHUB_USER` is missing, use `x-access-token` as the username.
 - Do NOT put the token in the URL.
 - Do NOT echo or log the token.
-- Use git with an Authorization header (`http.extraHeader`).
+- Do NOT write the token to disk.
+- Do NOT print the generated authorization header.
+- Do NOT use `Authorization: Bearer <token>` for GitHub git-over-HTTPS operations.
+- For private GitHub `git ls-remote`, `git clone`, and `git fetch` operations, use `http.extraHeader` with HTTP Basic authentication.
+- Build the Basic authentication value from `<username>:<GITHUB_TOKEN>`.
+- The authorization header must be semantically equivalent to HTTP Basic auth for GitHub git-over-HTTPS.
+- Use this same Basic auth method consistently for access check, clone, and fetch.
+
+Git authentication validation rules:
+- Before cloning or fetching `glogai/glog-action`, verify repository access using the same Basic authentication method.
+- If the access check fails, stop immediately and report GitHub authentication/access failure.
+- If clone or fetch fails, do not continue to `CLI.md` validation.
+- If a failed clone creates an incomplete cache directory, remove only that incomplete cache directory before retrying.
+- Validate `CLI.md` only after clone or fetch succeeds.
 
 Rules:
 - Ensure `GITHUB_TOKEN` is set, otherwise stop with a clear error.
@@ -598,7 +613,11 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 
 # Implementation notes
 
-- Use `http.extraHeader` with `GITHUB_TOKEN` for git HTTPS operations against the private glog-action repository.
+- Use `http.extraHeader` with HTTP Basic authentication for git HTTPS operations against the private glog-action repository.
+- Never use `Authorization: Bearer` for GitHub git-over-HTTPS operations.
+- Build Basic authentication from `GITHUB_USER:GITHUB_TOKEN`, or from `x-access-token:GITHUB_TOKEN` if `GITHUB_USER` is missing.
+- Test access before clone/fetch using the same authentication method.
+- Validate `CLI.md` only after git access and clone/fetch succeed.
 - Never print tokens.
 - Do not modify SARIF after scan.
 - Use safe shell practices.
