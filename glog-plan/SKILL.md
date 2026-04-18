@@ -99,6 +99,16 @@ Use global environment variables (do not prompt for them unless missing):
 
 If any is missing, stop and tell the user exactly which one(s) are missing and how to export them.
 
+Docker authentication recovery rule:
+- If a Docker pull, run, or other GHCR operation fails with an authentication or authorization error for `ghcr.io`, first verify that both `GITHUB_TOKEN` and `GITHUB_USER` are available in the current shell environment.
+- On Windows PowerShell, recover by logging in to GitHub Container Registry with the equivalent of:
+  `$env:GITHUB_TOKEN | docker login ghcr.io -u $env:GITHUB_USER --password-stdin`
+- Retry the failed GHCR Docker operation only after a successful Docker login.
+- Do not print the token.
+- Do not write the token to disk.
+- If Docker login fails, stop and report that GHCR authentication failed.
+- Perform GHCR Docker login only when an actual `ghcr.io` authentication/authorization error occurs, not preemptively.
+
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
