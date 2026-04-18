@@ -12,7 +12,7 @@ Obtain glog-action from GitHub and store it in a cache directory.
 
 Hardcoded repository:
 - Repo URL: `https://github.com/glogai/glog-action`
-- Branch/ref: `main`
+- Branch/ref: `fix-mandatory-field`
 
 For all Glog skills and actions use environment variables available in the user's shell environment.
 
