@@ -189,6 +189,16 @@ If `<REMEDIATION_MODE>` = `pr-per-finding`, one of the following must be availab
 
 If neither is available, stop with a clear error.
 
+Docker authentication recovery rule:
+- If a Docker pull, run, or other GHCR operation fails with an authentication or authorization error for `ghcr.io`, first verify that both `GITHUB_TOKEN` and `GITHUB_USER` are available in the current shell environment.
+- On Windows PowerShell, recover by logging in to GitHub Container Registry with the equivalent of:
+  `$env:GITHUB_TOKEN | docker login ghcr.io -u $env:GITHUB_USER --password-stdin`
+- Retry the failed GHCR Docker operation only after a successful Docker login.
+- Do not print the token.
+- Do not write the token to disk.
+- If Docker login fails, stop and report that GHCR authentication failed.
+- Perform GHCR Docker login only when an actual `ghcr.io` authentication/authorization error occurs, not preemptively.
+
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
