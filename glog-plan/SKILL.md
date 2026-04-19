@@ -142,6 +142,22 @@ Docker authentication recovery rule:
 
 # Execution workflow
 
+## Step 0: Windows / Git Bash compatibility
+
+If running on Windows with Git Bash / MSYS2, apply these rules before any scan, Docker, bash, or Node-based file operations:
+
+- Set `MSYS_NO_PATHCONV=1` for all relevant commands that invoke bash scripts, Docker, or Node.
+- Determine the current project root as usual, but convert the scan target path from Git Bash style to Windows style before passing it to `glog.sh` or any Docker-backed command.
+  - Example: `/c/Glog/Projects/foo` → `C:/Glog/Projects/foo`
+- Use the Windows-style path consistently as the scan target path:
+  - for `--path` in `glog.sh`
+  - for any Node-based file reads
+  - for any explicit SARIF/JSON path references passed to commands
+- Do not rely on raw Git Bash paths like `/c/...` for Docker-backed scan execution.
+- Prefer the filesystem Read tool for reading and parsing `.glog/glog-scan.sarif` and other generated JSON files on Windows, to avoid shell path conversion issues.
+- Do not use `python3` for SARIF or JSON parsing on Windows, because it may not be installed or may not be reliably available.
+- If the scan appears to run successfully but `.glog/glog-scan.sarif` is missing, treat this first as a likely Windows path-conversion / Docker mount issue and report that diagnosis explicitly before any other conclusion.
+
 ## Step 1: Read glog-action CLI.md (source of truth)
 
 - Open and read: `<GLOG_ACTION_PATH>/CLI.md`
