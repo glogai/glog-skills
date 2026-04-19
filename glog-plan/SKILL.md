@@ -120,6 +120,14 @@ Docker authentication recovery rule:
   - `--lang <user_value>` ONLY if the user provided a language. Otherwise do not include `--lang`.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
+- The scan is considered successful only if the engine produces the final SARIF file at:
+  - `.glog/glog-scan.sarif`
+- All post-scan analysis, summarization, validation, triage, and remediation planning must continue strictly from:
+  - `.glog/glog-scan.sarif`
+- Do NOT continue from any other SARIF file, temporary SARIF file, intermediate SARIF file, copied SARIF file, or engine-internal artifact created during execution.
+- If multiple SARIF files are created while the engine runs, ignore all of them unless the final expected file is exactly:
+  - `.glog/glog-scan.sarif`
+- If `.glog/glog-scan.sarif` is missing, treat the scan as failed for the purposes of this workflow, stop, and report the command output plus the best diagnosis.
 - This skill is strictly analysis-and-plan only.
 - DO NOT modify any project source file.
 - DO NOT modify configuration files, tests, build files, or documentation outside `.glog`.
@@ -187,6 +195,13 @@ From the CURRENT project root (the repo you want to scan), do:
 
 4) Ensure that the output SARIF file ends up at:
 - `.glog/glog-scan.sarif` in the CURRENT project.
+
+Important:
+- The workflow must treat `.glog/glog-scan.sarif` as the only valid final SARIF output for subsequent steps.
+- Do NOT select any other `.sarif` file produced during engine execution.
+- Do NOT analyze helper, temporary, partial, intermediate, fallback, copied, or engine-generated SARIF artifacts from other paths.
+- Even if other SARIF files exist, continue only if the final engine output exists exactly at:
+  - `.glog/glog-scan.sarif`
 
 After scan:
 - Verify `.glog/glog-scan.sarif` exists.
