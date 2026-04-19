@@ -72,10 +72,11 @@ Rules:
 - If the user replies with `skip` (or an empty/whitespace-only response), DO NOT pass `--lang` at all.
 - Otherwise pass `--lang <user_value>` exactly as provided after trimming whitespace.
 - Do not invent or default a language.
-- Keep other flags hardcoded:
-  - `--client test`
-  - `--env dev`
-  - `--sarif-format-type STANDARD`
+- Do not hardcode client or env values in this skill.
+- `--client` must be sourced from the environment variable `GLOG_CLIENT`.
+- `--env` must be sourced from the environment variable `GLOG_ENV`.
+- Both `GLOG_CLIENT` and `GLOG_ENV` must already be set before the skill starts execution.
+- `--sarif-format-type STANDARD` remains hardcoded.
 
 # Purpose
 
@@ -96,6 +97,8 @@ Use global environment variables (do not prompt for them unless missing):
 - GLOG_TOKEN
 - GITHUB_TOKEN
 - GITHUB_USER
+- GLOG_CLIENT
+- GLOG_ENV
 
 If any is missing, stop and tell the user exactly which one(s) are missing and how to export them.
 
@@ -113,11 +116,14 @@ Docker authentication recovery rule:
 
 - Before analysis starts, clean `.glog` directory.
 - Always scan the full current project root.
-- Run scan with the hardcoded flags:
-  - `--client test`
-  - `--env dev`
+- Run scan with the required flags:
+  - `--client <value from GLOG_CLIENT>`
+  - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - `--lang <user_value>` ONLY if the user provided a language. Otherwise do not include `--lang`.
+- `GLOG_CLIENT` and `GLOG_ENV` must be validated before any scan execution begins.
+- If either `GLOG_CLIENT` or `GLOG_ENV` is missing, stop immediately and do not run the engine.
+- Do not substitute hardcoded fallback values for client or env.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - The scan is considered successful only if the engine produces the final SARIF file at:
@@ -186,8 +192,8 @@ From the CURRENT project root (the repo you want to scan), do:
 - Use the current project root as the scan path.
 - Always scan the full current project.
 - Apply flags exactly:
-  - `--client test`
-  - `--env dev`
+  - `--client <value from GLOG_CLIENT>`
+  - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language. If skipped, do not pass `--lang`.
 
@@ -373,8 +379,8 @@ The report must use the following structure exactly in this section order:
 |------|------|
 | Date/Time | <timestamp> |
 | Selected Language | <language or skipped> |
-| Client | test |
-| Env | dev |
+| Client | <value from GLOG_CLIENT> |
+| Env | <value from GLOG_ENV> |
 | SARIF Format Type | STANDARD |
 
 ## Scan Target Details
