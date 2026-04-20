@@ -173,7 +173,7 @@ Rules:
 
 # Purpose
 
-Use glog-action CLI instructions to run a scan for the CURRENT project. When possible, scan only files changed in the current branch relative to the best available base reference. For Java scans, run the scan against the full project to preserve build/compile context, then restrict remediation scope to findings that belong to changed files only. Then analyze findings from `.glog/glog-scan.sarif`, review only the findings selected for remediation scope, and apply focused remediations.
+Use glog-action CLI instructions to run a scan for the CURRENT project while keeping the scan rooted at the original project root and excluding generated or non-codebase directories via the CLI ignore option. When possible, scan only files changed in the current branch relative to the best available base reference. For Java scans, run the scan against the full project to preserve build/compile context, then restrict remediation scope to findings that belong to changed files only. Then analyze findings from `.glog/glog-scan.sarif`, review only the findings selected for remediation scope, and apply focused remediations.
 
 # Required environment
 
@@ -205,9 +205,15 @@ Docker authentication recovery rule:
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
+- Always keep the scan rooted at the original current project root.
+- Scan only files that belong to the original project working tree.
+- Use the ignore option documented in `CLI.md` to exclude directories that are not part of the maintained codebase.
+- Always exclude `.git/` and `.glog/`.
+- Also exclude language/tool-specific generated, dependency-install, vendored, or build-output directories when they are not maintained source, such as `bin/`, `obj/`, `node_modules/`, `packages/`, `build/`, `dist/`, `target/`, and similar paths.
+- Do not scan copied workspaces, temporary directories, cache directories, or paths outside the original project root.
 - For Java scans:
   - do NOT use `--files` for scan execution
-  - run the scan against the full current project path
+  - run the scan against the full current project path as the target root, while still applying the ignore option for generated or non-codebase directories
   - after SARIF is produced, restrict review/remediation/reporting scope to findings whose referenced file paths belong to the changed-file set
 - For non-Java scans:
   - prefer scanning only changed files by passing them through the `--files` flag when a reliable base reference can be determined
@@ -241,10 +247,12 @@ Docker authentication recovery rule:
 - Findings outside remediation scope may be mentioned only as out-of-scope scan results when needed for clarity, but must not be remediated.
 
 Changed-file scope behavior:
+- Prepare a scan ignore list of generated or non-codebase directories before building the changed-file set.
 - Prepare the changed-file set whenever a reliable base reference is available.
 - The changed-file set is used in two different ways:
   - for non-Java scans: as the source of `--files` when usable
   - for Java scans: as the post-scan filtering scope for SARIF findings
+- Do not include files under ignored/generated directories in either scan execution or remediation scope.
 - If no usable changed files are found:
   - do not fail
   - fall back to full-project remediation scope
@@ -260,26 +268,35 @@ Changed-file scope behavior:
 - Identify the exact command(s) to run `glog-action` (entrypoint, required args, docker usage, path handling, output behavior, etc.)
 - Follow CLI.md instructions strictly.
 - Confirm how the scan target path should be supplied.
+- Confirm how `CLI.md` expects ignore paths/directories to be supplied.
 - Confirm how the SARIF output is expected to land in the current project's `.glog/` directory.
 
-## Step 1.5: Prepare changed file list and remediation scope
+## Step 1.5: Prepare scan ignore list, changed file list, and remediation scope
 
-Before running the scan, prepare a list of changed files in the current branch relative to the best available base reference.
+Before running the scan, prepare a scan ignore list for directories that are not part of the original codebase and a list of changed files in the current branch relative to the best available base reference.
 
 Goal:
 - Prefer focusing on the developer's current branch changes.
 - Reduce remediation noise from unrelated code.
+- Prevent generated or dependency directories from affecting scan scope.
 - Avoid unpredictable behavior by falling back safely when change detection is not reliable.
 - Preserve full-project scan behavior for Java when compile/build context is needed.
 
 Rules:
+- Build `<SCAN_IGNORE_DIRS>` as relative directory paths under the current project root that are not part of the maintained codebase.
+- Always include `.git/` and `.glog/`.
+- Include language/tool-specific generated, dependency-install, vendored, or build-output directories when they are not maintained source, such as `bin/`, `obj/`, `node_modules/`, `packages/`, `build/`, `dist/`, `target/`, and similar directories.
+- Only include directories that currently exist inside the current project root.
+- Do not include directories outside the current project root.
+- Do not ignore directories that contain real maintained source for this repository.
+- Convert the ignore list into `<SCAN_IGNORE_ARGS>` using the ignore option syntax defined in `CLI.md`.
 - Do not create a temporary filtered workspace.
 - Do not copy files into any local temp directory for scan scoping.
-- Build a changed-file set of relative file paths.
+- Build a changed-file set of relative file paths that belong to the current project root and are not under `<SCAN_IGNORE_DIRS>`.
 - Include only changed files that currently exist in the working tree.
 - Do not include deleted files.
 - Do not include directories.
-- Do not include files under `.git/` or `.glog/`.
+- Do not include files under `.git/`, `.glog/`, or `<SCAN_IGNORE_DIRS>`.
 - If renamed files are reported by git, include the new file path if it exists in the working tree.
 - If no reliable base reference can be determined, do not guess aggressively; fall back safely and document the fallback in the report.
 
@@ -300,7 +317,7 @@ Recommended diff scope:
 - Exclude:
   - Deleted files
   - Missing paths
-  - Generated artifacts inside `.glog`
+  - Paths under `.git/`, `.glog/`, or `<SCAN_IGNORE_DIRS>`
 
 Changed file preparation process:
 1) Determine the best available base reference.
@@ -308,8 +325,10 @@ Changed file preparation process:
 3) Filter the changed paths:
    - keep only files that currently exist
    - skip directories
-   - skip files under `.git/` and `.glog/`
+   - skip files under `.git/`, `.glog/`, and `<SCAN_IGNORE_DIRS>`
 4) Build:
+   - `<SCAN_IGNORE_DIRS>` = normalized set of relative directories to exclude from scan scope
+   - `<SCAN_IGNORE_ARGS>` = ignore-option arguments derived from `<SCAN_IGNORE_DIRS>` using `CLI.md`
    - `<CHANGED_FILES_SET>` = normalized set of relative changed file paths
    - `<SCAN_FILES_CSV>` = comma-separated changed file list suitable for `--files` when non-Java scan mode uses it
 5) If no usable changed files are found:
@@ -318,6 +337,8 @@ Changed file preparation process:
    - record this fallback in the report
 
 Define:
+- `<SCAN_IGNORE_DIRS>` = normalized relative directories under the current project root to exclude from scanning, otherwise empty
+- `<SCAN_IGNORE_ARGS>` = ignore-option arguments derived from `<SCAN_IGNORE_DIRS>` using `CLI.md`, otherwise empty
 - `<CHANGED_FILES_SET>` = normalized relative changed-file set if usable, otherwise empty
 - `<SCAN_FILES_CSV>` = comma-separated changed file list if usable and needed for non-Java scan execution, otherwise empty
 - `<SCAN_MODE>`:
@@ -343,6 +364,7 @@ From the CURRENT project root (the repo you want to scan), do:
 
 2) Execute scan using the invocation defined in CLI.md.
 - Always use the current project root as the scan path.
+- Pass `<SCAN_IGNORE_ARGS>` whenever `<SCAN_IGNORE_DIRS>` is non-empty.
 - If `<SCAN_MODE>` = `full-project-java`, do not pass `--files`.
 - If `<SCAN_MODE>` = `changed-files`, pass `--files <SCAN_FILES_CSV>`.
 - If `<SCAN_MODE>` = `full-project-fallback`, do not pass `--files`.
@@ -364,6 +386,7 @@ After scan:
   - `full-project-java`
   - `changed-files`
   - `full-project-fallback`
+- Record which ignored directories were passed to the scan, if any.
 
 ## Step 3: Analyze findings from SARIF (read-only)
 
@@ -380,6 +403,7 @@ After scan:
 Before any review or remediation work begins, determine which SARIF findings are in remediation scope.
 
 Rules:
+- If a finding resolves to a path under `<SCAN_IGNORE_DIRS>`, place it in `<OUT_OF_SCOPE_FINDINGS>` because it is outside the maintained project source scope.
 - If `<REMEDIATION_SCOPE>` = `changed-files-only`, include only findings whose referenced file path matches a path in `<CHANGED_FILES_SET>`.
 - If a finding contains multiple locations, include the finding only if at least one primary relevant code location matches the changed-file set.
 - If `<REMEDIATION_SCOPE>` = `full-project-fallback`, all findings are in scope.
@@ -536,6 +560,7 @@ The report must contain:
   - remediation mode used: `<REMEDIATION_MODE>`
 - Scan Target Details:
   - Base reference used for change detection: <BASE_REF or none>
+  - Ignored directories passed to scan: <comma-separated ignored dirs or none>
   - Changed files identified: <COUNT>
   - Findings selected for review/remediation: <changed files only | full project>
   - Fallback to full-project scope required: <yes | no>
@@ -623,7 +648,7 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 - Only for non-Java scans, build a comma-separated list of relative file paths for `--files` when changed-file scan execution is applicable.
 - For Java scans, do not use `--files` for scan execution; instead run a full-project scan and filter SARIF findings afterward to the changed-file set.
 - If no changed files are detected, or if no suitable base reference is available, fall back safely and document the fallback in the report.
-- Do not include files under `.git/` or `.glog/` in the changed-file set unless explicitly required by the project layout.
+- Build and pass the CLI ignore option for generated or non-codebase directories under the current project root, and exclude any files under those directories from the changed-file set.
 - If the current branch has an upstream tracking branch, verify that it is a sensible comparison base before using it as the base reference.
 - If the repository state is too unusual to determine changed files safely, prefer full-project fallback over risky assumptions.
 - In `local` mode, do not stage or commit report files.

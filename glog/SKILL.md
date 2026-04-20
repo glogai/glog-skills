@@ -152,7 +152,7 @@ Rules:
 
 # Purpose
 
-Use glog-action CLI instructions to run a scan for the CURRENT project, then analyze findings from `.glog/glog-scan.sarif`, validate each finding, and apply focused remediations where genuine.
+Use glog-action CLI instructions to run a scan for the CURRENT project while keeping the scan rooted at the original project root and excluding generated or non-codebase directories via the CLI ignore option. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, and apply focused remediations where genuine.
 
 # Required environment
 
@@ -193,6 +193,11 @@ Docker authentication recovery rule:
 - `GLOG_CLIENT` and `GLOG_ENV` must be validated before any scan execution begins.
 - If either `GLOG_CLIENT` or `GLOG_ENV` is missing, stop immediately and do not run the engine.
 - Do not substitute hardcoded fallback values for client or env.
+- The scan target must remain the original current project root. Do not scan copied workspaces, temporary directories, cache directories, or paths outside the project.
+- Use the ignore option documented in `CLI.md` to exclude directories that are not part of the maintained codebase.
+- Always exclude `.git/` and `.glog/`.
+- Also exclude language/tool-specific generated, dependency-install, vendored, or build-output directories when they are not maintained source, such as `bin/`, `obj/`, `node_modules/`, `packages/`, `build/`, `dist/`, `target/`, and similar paths.
+- Do not ignore directories that contain real maintained source for the current repository.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - Treat remediation advice as a focused security remediation task.
@@ -218,6 +223,7 @@ Docker authentication recovery rule:
 - Open and read: `<GLOG_ACTION_PATH>/CLI.md`
 - Identify the exact command(s) to run `glog-action` (entrypoint, required args, docker usage, etc.)
 - Follow CLI.md instructions strictly.
+- Confirm how `CLI.md` expects ignore paths/directories to be supplied.
 
 ## Step 2: Clean .glog and run scan
 
@@ -227,12 +233,23 @@ From the CURRENT project root (the repo you want to scan), do:
 - If `.glog` exists: remove it completely
 - Recreate `.glog/` directory
 
-2) Execute scan using the invocation defined in CLI.md.
+2) Prepare scan ignore paths.
+- Build a set of relative directory paths under the current project root that are not part of the maintained codebase.
+- Always include `.git/` and `.glog/`.
+- Include language/tool-specific generated, dependency-install, vendored, or build-output directories when they are not maintained source, such as `bin/`, `obj/`, `node_modules/`, `packages/`, `build/`, `dist/`, `target/`, and similar directories.
+- Only include directories that currently exist inside the current project root.
+- Do not include paths outside the current project root.
+- Do not ignore directories that contain real maintained source for this repository.
+- Convert the ignore list into the format required by `CLI.md`.
+
+3) Execute scan using the invocation defined in CLI.md.
 - Apply flags exactly:
   - `--client <value from GLOG_CLIENT>`
   - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language (not skip/empty). If skipped, do not pass `--lang`.
+- Pass the ignore option from `CLI.md` whenever the ignore list is non-empty.
+- Ensure the scan still targets the original current project root only.
 - If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project as specified by CLI.md.
 - Ensure that the output SARIF file ends up at: `.glog/glog-scan.sarif` in the CURRENT project.
 
@@ -349,6 +366,7 @@ Create `.glog/glog-remediation-report.md`.
 
 Report must contain:
 - Scan metadata
+- Scan scope details, including the original project root and ignored directories used
 - Summary of findings
 - Genuine vs not genuine
 - Files impacted
@@ -411,3 +429,4 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 - Never print tokens.
 - Do not modify SARIF after scan.
 - Use safe shell practices.
+- Keep the scan rooted at the original project root and use the CLI ignore option to exclude generated or non-codebase directories.
