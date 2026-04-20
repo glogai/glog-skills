@@ -62,11 +62,29 @@ Cache location — detect OS first, then prefer in order:
 2) Else: `$env:LOCALAPPDATA\glog\glog-action`
 3) If `LOCALAPPDATA` is not available: `$env:TEMP\glog\glog-action`
 
-Auth rules for the private repository:
-- Use `GITHUB_TOKEN` for git HTTPS authentication.
-- Do NOT put the token in the clone URL.
+Auth rules (private repo):
+- Use GITHUB_TOKEN for git HTTPS authentication via HTTP Basic auth.
+- Do NOT put the token in the URL.
 - Do NOT echo or log the token.
-- Use git with an Authorization header via `http.extraHeader`.
+- GitHub Git-over-HTTPS requires Basic scheme. Bearer is for the GitHub REST API only — using it for Git operations returns
+  "invalid credentials".
+- The header value is base64(x-access-token:<GITHUB_TOKEN>). Computing it is platform-dependent:
+
+- Bash (Linux, macOS, Git Bash on Windows):
+  B64=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
+  git -c "http.extraHeader=Authorization: Basic $B64" clone <url> <dir>
+  git -C <dir> -c "http.extraHeader=Authorization: Basic $B64" fetch origin main
+  git -C <dir> reset --hard origin/main
+
+- PowerShell (Windows powershell.exe or pwsh on any platform):
+  $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+  git -c "http.extraHeader=Authorization: Basic $b64" clone <url> <dir>
+  git -C <dir> -c "http.extraHeader=Authorization: Basic $b64" fetch origin main
+  git -C <dir> reset --hard origin/main
+- tr -d '\n' is required in Bash because Linux base64 appends a newline; [Convert]::ToBase64String does not, so no equivalent is
+  needed in PowerShell.
+- Detect the environment before constructing the header: if running on Windows (OS is Windows_NT or RuntimeInformation confirms
+  Windows) use the PowerShell form; otherwise use the Bash form.
 
 Rules:
 - Ensure `GITHUB_TOKEN` is set, otherwise stop with a clear error.
@@ -737,7 +755,7 @@ The report should focus on:
 
 # Implementation notes
 
-- Use `http.extraHeader` with `GITHUB_TOKEN` for git HTTPS operations against the private `glog-action` repository.
+- Use http.extraHeader with GITHUB_TOKEN for git operations. Always use Basic auth scheme with base64-encoded x-access-token:<TOKEN> — never Bearer (see Auth rules above).
 - Never print tokens.
 - Do not modify SARIF after scan.
 - Use safe shell practices.

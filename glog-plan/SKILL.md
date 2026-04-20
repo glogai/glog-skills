@@ -24,18 +24,28 @@ Cache location (prefer in this order):
 3) If home is not available: `/tmp/glog/glog-action`
 
 Auth rules (private repo):
-- Use `GITHUB_TOKEN` for GitHub HTTPS authentication.
-- Use `GITHUB_USER` as the GitHub username if available.
-- If `GITHUB_USER` is missing, use `x-access-token` as the username.
+- Use GITHUB_TOKEN for git HTTPS authentication via HTTP Basic auth.
 - Do NOT put the token in the URL.
 - Do NOT echo or log the token.
-- Do NOT write the token to disk.
-- Do NOT print the generated authorization header.
-- Do NOT use `Authorization: Bearer <token>` for GitHub git-over-HTTPS operations.
-- For private GitHub `git ls-remote`, `git clone`, and `git fetch` operations, use `http.extraHeader` with HTTP Basic authentication.
-- Build the Basic authentication value from `<username>:<GITHUB_TOKEN>`.
-- The authorization header must be semantically equivalent to HTTP Basic auth for GitHub git-over-HTTPS.
-- Use this same Basic auth method consistently for access check, clone, and fetch.
+- GitHub Git-over-HTTPS requires Basic scheme. Bearer is for the GitHub REST API only — using it for Git operations returns
+  "invalid credentials".
+- The header value is base64(x-access-token:<GITHUB_TOKEN>). Computing it is platform-dependent:
+
+- Bash (Linux, macOS, Git Bash on Windows):
+  B64=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
+  git -c "http.extraHeader=Authorization: Basic $B64" clone <url> <dir>
+  git -C <dir> -c "http.extraHeader=Authorization: Basic $B64" fetch origin main
+  git -C <dir> reset --hard origin/main
+
+- PowerShell (Windows powershell.exe or pwsh on any platform):
+  $b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+  git -c "http.extraHeader=Authorization: Basic $b64" clone <url> <dir>
+  git -C <dir> -c "http.extraHeader=Authorization: Basic $b64" fetch origin main
+  git -C <dir> reset --hard origin/main
+- tr -d '\n' is required in Bash because Linux base64 appends a newline; [Convert]::ToBase64String does not, so no equivalent is
+  needed in PowerShell.
+- Detect the environment before constructing the header: if running on Windows (OS is Windows_NT or RuntimeInformation confirms
+  Windows) use the PowerShell form; otherwise use the Bash form.
 
 Git authentication validation rules:
 - Before cloning or fetching `glogai/glog-action`, verify repository access using the same Basic authentication method.
@@ -581,9 +591,7 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 
 # Implementation notes
 
-- Use `http.extraHeader` with HTTP Basic authentication for git HTTPS operations against the private glog-action repository.
-- Never use `Authorization: Bearer` for GitHub git-over-HTTPS operations.
-- Build Basic authentication from `GITHUB_USER:GITHUB_TOKEN`, or from `x-access-token:GITHUB_TOKEN` if `GITHUB_USER` is missing.
+- Use http.extraHeader with GITHUB_TOKEN for git operations. Always use Basic auth scheme with base64-encoded x-access-token:<TOKEN> — never Bearer (see Auth rules above).
 - Test access before clone/fetch using the same authentication method.
 - Validate `CLI.md` only after git access and clone/fetch succeed.
 - Never print tokens.
