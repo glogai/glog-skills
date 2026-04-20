@@ -50,10 +50,17 @@ These variables may be defined in shell configuration files such as:
 
 They may also be configured via system environment variables.
 
-Cache location (prefer in this order):
+Cache location — detect OS first, then prefer in order:
+
+**Linux / macOS:**
 1) If `$XDG_CACHE_HOME` is set: `$XDG_CACHE_HOME/glog/glog-action`
 2) Else: `~/.cache/glog/glog-action`
 3) If home is not available: `/tmp/glog/glog-action`
+
+**Windows (PowerShell):**
+1) If `$env:XDG_CACHE_HOME` is set: `$env:XDG_CACHE_HOME\glog\glog-action`
+2) Else: `$env:LOCALAPPDATA\glog\glog-action`
+3) If `LOCALAPPDATA` is not available: `$env:TEMP\glog\glog-action`
 
 Auth rules for the private repository:
 - Use `GITHUB_TOKEN` for git HTTPS authentication.
@@ -115,12 +122,25 @@ Behavior:
   - do not set any additional VDB environment variables
   - use the scanner's default VDB behavior
 - If `<VDB_MODE>` = `large`:
-  - set the following environment variables in the same shell process before invoking the scan:
-    - `GLOG_DEPSCAN_VDB_VOLUME=glog-depscan-vdb-full`
-    - `VDB_APP_ONLY=false`
-    - `VDB_HOME=/vdb`
-    - `VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz-10y:v6`
-    - `VDB_AGE_HOURS=0`
+  - set the following environment variables in the same shell process before invoking the scan.
+
+    **Linux / macOS (Bash):**
+    ```bash
+    export GLOG_DEPSCAN_VDB_VOLUME=glog-depscan-vdb-full
+    export VDB_APP_ONLY=false
+    export VDB_HOME=/vdb
+    export VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz-10y:v6
+    export VDB_AGE_HOURS=0
+    ```
+
+    **Windows (PowerShell):**
+    ```powershell
+    $env:GLOG_DEPSCAN_VDB_VOLUME = "glog-depscan-vdb-full"
+    $env:VDB_APP_ONLY = "false"
+    $env:VDB_HOME = "/vdb"
+    $env:VDB_DATABASE_URL = "ghcr.io/appthreat/vdbxz-10y:v6"
+    $env:VDB_AGE_HOURS = "0"
+    ```
 
 # Required environment
 
@@ -319,16 +339,39 @@ From the CURRENT project root (the repo to scan), do:
 
 Before invoking the scan command:
 
-If `<VDB_MODE>` = `large`, set these environment variables in the same shell process that runs the scan:
+**Detect the host OS.** Use this to select the correct script and environment variable syntax throughout this step.
+
+If `<VDB_MODE>` = `large`, set the five VDB environment variables in the current shell process using the platform-appropriate syntax shown in the vulnerability database selection section above. Setting them in the host shell is sufficient — `glog.sh` (Linux/macOS) and `glog.ps1` (Windows) both forward any of these variables that are set into the Docker container via conditional flags.
+
+If `<VDB_MODE>` = `small`, do not set any VDB environment variables.
+
+**Linux / macOS** — run using Bash:
 
 ```bash
-export GLOG_DEPSCAN_VDB_VOLUME=glog-depscan-vdb-full
-export VDB_APP_ONLY=false
-export VDB_HOME=/vdb
-export VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz-10y:v6
-export VDB_AGE_HOURS=0
+bash <GLOG_ACTION_PATH>/glog.sh clean scan \
+  --path <PROJECT_ROOT> \
+  --glogtoken "$GLOG_TOKEN" \
+  --registry "ghcr.io/glogai/" \
+  --client test \
+  --env dev \
+  --sarif-format-type STANDARD \
+  --lang oss
+```
 
-If <VDB_MODE> = small, do not set these variables.
+**Windows** — run using PowerShell:
+
+```powershell
+& "<GLOG_ACTION_PATH>\glog.ps1" clean scan `
+  --path <PROJECT_ROOT> `
+  --glogtoken $env:GLOG_TOKEN `
+  --registry "ghcr.io/glogai/" `
+  --client test `
+  --env dev `
+  --sarif-format-type STANDARD `
+  --lang oss
+```
+
+Replace `<GLOG_ACTION_PATH>` and `<PROJECT_ROOT>` with the resolved paths before running.
 
 Then run the scan command from CLI.md.
 
@@ -708,3 +751,7 @@ The report should focus on:
 - Do not infer more certainty than the scan output and repository evidence support.
 - Only when <VDB_MODE> = large, set the large VDB environment variables in the same shell process immediately before running the scan command.
 - When <VDB_MODE> = small, do not set any additional VDB environment variables and rely on the default scanner behavior.
+- Detect the host OS before running any shell commands. Use `glog.sh` on Linux/macOS and `glog.ps1` on Windows. Use the correct environment variable syntax for the detected platform throughout.
+- On Windows, use PowerShell (`pwsh` or `powershell`) to invoke `glog.ps1` and to set `$env:` variables. Do not use Bash syntax on Windows.
+- On Linux/macOS, use Bash to invoke `glog.sh` and to export variables. Do not use PowerShell syntax on Linux/macOS.
+- Both `glog.sh` and `glog.ps1` forward VDB environment variables to Docker when they are set in the calling shell. No additional patching of either script is required.
