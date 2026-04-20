@@ -13,7 +13,7 @@ A collection of reusable **skills** used in this workspace. Each skill is define
 - `glog-plan/SKILL.md` — Glog.AI scan + SARIF triage + remediation planning only. Does not modify source files.
 
 **Install skills**
-Before installing, ensure any required environment variables for the skill are already set. The Glog skills expect `GLOG_TOKEN`, `GITHUB_TOKEN`, and `GITHUB_USER`.
+Before installing, ensure any required environment variables for the skill are already set. See **Skill requirements** below for the current Glog skill environment variables.
 
 For Codex:
 - Use `$skill-installer` to install from this repository.
@@ -56,7 +56,11 @@ Use the glog skill to scan this repo.
 ```
 
 **Skill requirements**
-Some skills rely on environment variables or external tools. For example, the `glog` skill expects tokens such as `GLOG_TOKEN`, `GITHUB_TOKEN`, and `GITHUB_USER` to already be set in the environment. Check each `SKILL.md` for exact requirements.
+Some skills rely on environment variables or external tools. Check each `SKILL.md` for the source of truth.
+
+- Common Glog skill environment variables: `GLOG_TOKEN`, `GITHUB_TOKEN`, and `GITHUB_USER`.
+- Scan runtime variables for `glog`, `glog-diff`, and `glog-plan`: `GLOG_CLIENT` and `GLOG_ENV`.
+- Additional skill-specific requirements may apply depending on the workflow.
 
 **Adding a new skill**
 1. Create a new folder at the repo root (for example, `my-skill/`).
