@@ -56,6 +56,7 @@ Use the glog skill to scan this repo.
 ```
 
 **Skill requirements**
+
 Some skills rely on environment variables or external tools. Check each `SKILL.md` for the source of truth.
 
 - Common Glog skill environment variables: `GLOG_TOKEN`, `GITHUB_TOKEN`, and `GITHUB_USER`.
