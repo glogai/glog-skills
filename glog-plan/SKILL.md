@@ -24,10 +24,25 @@ Cache location (prefer in this order):
 3) If home is not available: `/tmp/glog/glog-action`
 
 Auth rules (private repo):
-- Use `GITHUB_TOKEN` for git HTTPS authentication.
+- Use `GITHUB_TOKEN` for GitHub HTTPS authentication.
+- Use `GITHUB_USER` as the GitHub username if available.
+- If `GITHUB_USER` is missing, use `x-access-token` as the username.
 - Do NOT put the token in the URL.
 - Do NOT echo or log the token.
-- Use git with an Authorization header (`http.extraHeader`).
+- Do NOT write the token to disk.
+- Do NOT print the generated authorization header.
+- Do NOT use `Authorization: Bearer <token>` for GitHub git-over-HTTPS operations.
+- For private GitHub `git ls-remote`, `git clone`, and `git fetch` operations, use `http.extraHeader` with HTTP Basic authentication.
+- Build the Basic authentication value from `<username>:<GITHUB_TOKEN>`.
+- The authorization header must be semantically equivalent to HTTP Basic auth for GitHub git-over-HTTPS.
+- Use this same Basic auth method consistently for access check, clone, and fetch.
+
+Git authentication validation rules:
+- Before cloning or fetching `glogai/glog-action`, verify repository access using the same Basic authentication method.
+- If the access check fails, stop immediately and report GitHub authentication/access failure.
+- If clone or fetch fails, do not continue to `CLI.md` validation.
+- If a failed clone creates an incomplete cache directory, remove only that incomplete cache directory before retrying.
+- Validate `CLI.md` only after clone or fetch succeeds.
 
 Rules:
 - Ensure `GITHUB_TOKEN` is set, otherwise stop with a clear error.
@@ -57,14 +72,15 @@ Rules:
 - If the user replies with `skip` (or an empty/whitespace-only response), DO NOT pass `--lang` at all.
 - Otherwise pass `--lang <user_value>` exactly as provided after trimming whitespace.
 - Do not invent or default a language.
-- Keep other flags hardcoded:
-  - `--client test`
-  - `--env dev`
-  - `--sarif-format-type STANDARD`
+- Do not hardcode client or env values in this skill.
+- `--client` must be sourced from the environment variable `GLOG_CLIENT`.
+- `--env` must be sourced from the environment variable `GLOG_ENV`.
+- Both `GLOG_CLIENT` and `GLOG_ENV` must already be set before the skill starts execution.
+- `--sarif-format-type STANDARD` remains hardcoded.
 
 # Purpose
 
-Use glog-action CLI instructions to run a scan for the CURRENT project. When possible, scan only files changed in the current branch relative to the best available base reference by preparing a temporary filtered workspace. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, identify possible false positives, and produce a detailed remediation plan only.
+Use glog-action CLI instructions to run a scan for the CURRENT project root. Always scan the complete current project. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, identify possible false positives, and produce a detailed remediation plan only.
 
 This skill is planning-only:
 - it must NOT modify application source files
@@ -81,21 +97,43 @@ Use global environment variables (do not prompt for them unless missing):
 - GLOG_TOKEN
 - GITHUB_TOKEN
 - GITHUB_USER
+- GLOG_CLIENT
+- GLOG_ENV
 
 If any is missing, stop and tell the user exactly which one(s) are missing and how to export them.
+
+Docker authentication recovery rule:
+- If a Docker pull, run, or other GHCR operation fails with an authentication or authorization error for `ghcr.io`, first verify that both `GITHUB_TOKEN` and `GITHUB_USER` are available in the current shell environment.
+- On Windows PowerShell, recover by logging in to GitHub Container Registry with the equivalent of:
+  `$env:GITHUB_TOKEN | docker login ghcr.io -u $env:GITHUB_USER --password-stdin`
+- Retry the failed GHCR Docker operation only after a successful Docker login.
+- Do not print the token.
+- Do not write the token to disk.
+- If Docker login fails, stop and report that GHCR authentication failed.
+- Perform GHCR Docker login only when an actual `ghcr.io` authentication/authorization error occurs, not preemptively.
 
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
-- Prefer scanning only changed files by using a temporary filtered workspace when a reliable base reference can be determined.
-- Fall back to a full-project scan only when changed-file scanning is not reliable or not possible.
-- Run scan with the hardcoded flags:
-  - `--client test`
-  - `--env dev`
+- Always scan the full current project root.
+- Run scan with the required flags:
+  - `--client <value from GLOG_CLIENT>`
+  - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - `--lang <user_value>` ONLY if the user provided a language. Otherwise do not include `--lang`.
+- `GLOG_CLIENT` and `GLOG_ENV` must be validated before any scan execution begins.
+- If either `GLOG_CLIENT` or `GLOG_ENV` is missing, stop immediately and do not run the engine.
+- Do not substitute hardcoded fallback values for client or env.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
+- The scan is considered successful only if the engine produces the final SARIF file at:
+  - `.glog/glog-scan.sarif`
+- All post-scan analysis, summarization, validation, triage, and remediation planning must continue strictly from:
+  - `.glog/glog-scan.sarif`
+- Do NOT continue from any other SARIF file, temporary SARIF file, intermediate SARIF file, copied SARIF file, or engine-internal artifact created during execution.
+- If multiple SARIF files are created while the engine runs, ignore all of them unless the final expected file is exactly:
+  - `.glog/glog-scan.sarif`
+- If `.glog/glog-scan.sarif` is missing, treat the scan as failed for the purposes of this workflow, stop, and report the command output plus the best diagnosis.
 - This skill is strictly analysis-and-plan only.
 - DO NOT modify any project source file.
 - DO NOT modify configuration files, tests, build files, or documentation outside `.glog`.
@@ -118,6 +156,22 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 
 # Execution workflow
 
+## Step 0: Windows / Git Bash compatibility
+
+If running on Windows with Git Bash / MSYS2, apply these rules before any scan, Docker, bash, or Node-based file operations:
+
+- Set `MSYS_NO_PATHCONV=1` for all relevant commands that invoke bash scripts, Docker, or Node.
+- Determine the current project root as usual, but convert the scan target path from Git Bash style to Windows style before passing it to `glog.sh` or any Docker-backed command.
+  - Example: `/c/Glog/Projects/foo` → `C:/Glog/Projects/foo`
+- Use the Windows-style path consistently as the scan target path:
+  - for `--path` in `glog.sh`
+  - for any Node-based file reads
+  - for any explicit SARIF/JSON path references passed to commands
+- Do not rely on raw Git Bash paths like `/c/...` for Docker-backed scan execution.
+- Prefer the filesystem Read tool for reading and parsing `.glog/glog-scan.sarif` and other generated JSON files on Windows, to avoid shell path conversion issues.
+- Do not use `python3` for SARIF or JSON parsing on Windows, because it may not be installed or may not be reliably available.
+- If the scan appears to run successfully but `.glog/glog-scan.sarif` is missing, treat this first as a likely Windows path-conversion / Docker mount issue and report that diagnosis explicitly before any other conclusion.
+
 ## Step 1: Read glog-action CLI.md (source of truth)
 
 - Open and read: `<GLOG_ACTION_PATH>/CLI.md`
@@ -125,73 +179,6 @@ If any is missing, stop and tell the user exactly which one(s) are missing and h
 - Follow CLI.md instructions strictly.
 - Confirm how the scan target path should be supplied.
 - Confirm how the SARIF output is expected to land in the current project's `.glog/` directory.
-
-## Step 1.5: Prepare filtered workspace from changed files
-
-Before running the scan, prepare a temporary filtered workspace that contains only files changed in the current branch relative to the best available base reference.
-
-Goal:
-- Scan only the developer's current branch changes when possible.
-- Reduce noise from unrelated code.
-- Avoid unpredictable behavior by falling back safely when change detection is not reliable.
-
-Temporary workspace:
-- Create a temporary directory inside the current project root:
-  - `.glog-filtered-src/`
-
-Rules:
-- Preserve relative paths when copying files.
-- Include only changed files that currently exist in the working tree.
-- Do not copy deleted files.
-- Do not modify the original project files during workspace preparation.
-- Do not use git commit, git push, or PR operations during this step.
-- Do not include `.git`, `.glog`, or `.glog-filtered-src` as scan source content.
-- If renamed files are reported by git, include the new file path if it exists in the working tree.
-- If no reliable base reference can be determined, do not guess aggressively; fall back to scanning the full project and document the fallback in the report.
-
-How to determine the best available base reference:
-- First, prefer the upstream tracking branch of the current branch, if it exists and is a sensible comparison base.
-- Otherwise prefer one of these remote refs if present:
-  - `origin/main`
-  - `origin/master`
-- If none of the above exists or can be fetched/referenced safely, no reliable base reference is available.
-
-Recommended diff scope:
-- Use changed files from the current branch compared to the base reference.
-- Include file statuses that represent files currently present and relevant to scanning:
-  - Added
-  - Copied
-  - Modified
-  - Renamed
-- Exclude:
-  - Deleted files
-  - Missing paths
-  - Generated artifacts inside `.glog` or `.glog-filtered-src`
-
-Workspace preparation process:
-1) Remove any previous `.glog-filtered-src/` directory.
-2) Recreate `.glog-filtered-src/`.
-3) Determine the best available base reference.
-4) Collect changed files using git diff.
-5) Filter the changed paths:
-   - keep only files that currently exist
-   - skip directories
-   - skip files under `.git/`, `.glog/`, and `.glog-filtered-src/`
-6) For each remaining changed file:
-   - create its parent directory inside `.glog-filtered-src/`
-   - copy the file into the filtered workspace preserving relative path
-7) If no usable changed files are found:
-   - do not fail
-   - fall back to scanning the full current project
-   - record this fallback in the report
-
-Verification of filtered workspace:
-- If `.glog-filtered-src/` contains at least one copied file, use it as the scan target.
-- Otherwise use the current project root as the scan target.
-
-Define:
-- `<SCAN_TARGET_PATH>` = `.glog-filtered-src` if filtered workspace is usable
-- otherwise `<SCAN_TARGET_PATH>` = current project root
 
 ## Step 2: Clean .glog and run scan
 
@@ -202,27 +189,30 @@ From the CURRENT project root (the repo you want to scan), do:
 - Recreate `.glog/` directory
 
 2) Execute scan using the invocation defined in CLI.md.
-- Use `<SCAN_TARGET_PATH>` as the scan path.
-- `<SCAN_TARGET_PATH>` is:
-  - `.glog-filtered-src` if changed files were successfully prepared
-  - otherwise the current project root
+- Use the current project root as the scan path.
+- Always scan the full current project.
 - Apply flags exactly:
-  - `--client test`
-  - `--env dev`
+  - `--client <value from GLOG_CLIENT>`
+  - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language. If skipped, do not pass `--lang`.
 
-3) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target `<SCAN_TARGET_PATH>` exactly as specified by CLI.md.
+3) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project root exactly as specified by CLI.md.
 
 4) Ensure that the output SARIF file ends up at:
 - `.glog/glog-scan.sarif` in the CURRENT project.
 
+Important:
+- The workflow must treat `.glog/glog-scan.sarif` as the only valid final SARIF output for subsequent steps.
+- Do NOT select any other `.sarif` file produced during engine execution.
+- Do NOT analyze helper, temporary, partial, intermediate, fallback, copied, or engine-generated SARIF artifacts from other paths.
+- Even if other SARIF files exist, continue only if the final engine output exists exactly at:
+  - `.glog/glog-scan.sarif`
+
 After scan:
 - Verify `.glog/glog-scan.sarif` exists.
 - If missing, stop and show the scan command output and your best diagnosis.
-- Record whether the scan target was:
-  - filtered workspace only
-  - full project fallback
+- Record that the scan target was the full current project root.
 
 ## Step 3: Analyze findings from SARIF (read-only)
 
@@ -389,18 +379,16 @@ The report must use the following structure exactly in this section order:
 |------|------|
 | Date/Time | <timestamp> |
 | Selected Language | <language or skipped> |
-| Client | test |
-| Env | dev |
+| Client | <value from GLOG_CLIENT> |
+| Env | <value from GLOG_ENV> |
 | SARIF Format Type | STANDARD |
 
 ## Scan Target Details
 
 | Field | Value |
 |------|------|
-| Scan Target Type | <filtered workspace / full project fallback> |
-| Base Reference | <ref or not available> |
-| Changed Files Copied | <count> |
-| Full Project Fallback Required | <yes/no + short reason> |
+| Scan Target Type | full current project |
+| Scan Target Path | <current project root> |
 
 ## SARIF Summary
 
@@ -505,10 +493,8 @@ The report must contain:
   - env
 
 - Scan target details:
-  - scan target type (`filtered workspace` or `full project fallback`)
-  - base reference used for change detection, if available
-  - number of changed files copied into the filtered workspace, if available
-  - whether fallback to full-project scan was required
+  - scan target type (`full current project`)
+  - scan target path
 
 - SARIF summary:
   - total results count
@@ -551,27 +537,26 @@ After saving the report file:
 
 ## Cleanup permission boundary
 
-The agent is explicitly allowed to delete files and directories inside the project's `.glog` directory and the temporary `.glog-filtered-src` directory as part of this workflow cleanup.
+The agent is explicitly allowed to delete files and directories inside the project's `.glog` directory as part of this workflow cleanup.
 
 This deletion is intentional housekeeping and not destructive user data removal.
 
 Allowed cleanup scope:
 - `.glog/**`
-- `.glog-filtered-src/**`
 
 Rules:
-- Never delete files outside `.glog` or `.glog-filtered-src`.
-- Only generated scan artifacts and temporary filtered workspace contents may be removed.
+- Never delete files outside `.glog`.
+- Only generated scan artifacts inside `.glog` may be removed.
 - The preserved files must remain intact:
   - `.glog/glog-scan.sarif`
   - `.glog/glog-remediation-plan.md`
 
 Policy note:
-- Removal of extra `.glog` artifacts and removal of `.glog-filtered-src` are explicitly permitted for this skill and must not be blocked as destructive operations.
+- Removal of extra `.glog` artifact is explicitly permitted for this skill and must not be blocked as destructive operations.
 
 ## Step 7: Cleanup temporary artifacts (preserve SARIF and plan)
 
-This workflow explicitly authorizes cleanup inside `.glog` and `.glog-filtered-src`.
+This workflow explicitly authorizes cleanup inside `.glog`.
 
 Files that must be preserved:
 - `.glog/glog-scan.sarif`
@@ -579,10 +564,9 @@ Files that must be preserved:
 
 Cleanup rules:
 - Delete any other file or subdirectory inside `.glog`.
-- `.glog-filtered-src` is temporary and may be removed completely.
 - This deletion is allowed and expected for this skill.
 - Do not treat removal of extra temporary artifacts as a destructive action requiring additional confirmation.
-- Do not delete or modify anything outside `.glog` or `.glog-filtered-src`.
+- Do not delete or modify anything outside `.glog`.
 - Cleanup must not use git commands that create, record, or publish changes.
 
 Process:
@@ -592,24 +576,21 @@ Process:
 3) Remove the entire `.glog` directory.
 4) Recreate `.glog`.
 5) Move preserved files back.
-6) Remove `.glog-filtered-src` completely if it exists.
 
 If cleanup still cannot be completed due to environment or policy enforcement, clearly report which extra artifacts remain.
 
 # Implementation notes
 
-- Use `http.extraHeader` with `GITHUB_TOKEN` for git HTTPS operations against the private glog-action repository.
+- Use `http.extraHeader` with HTTP Basic authentication for git HTTPS operations against the private glog-action repository.
+- Never use `Authorization: Bearer` for GitHub git-over-HTTPS operations.
+- Build Basic authentication from `GITHUB_USER:GITHUB_TOKEN`, or from `x-access-token:GITHUB_TOKEN` if `GITHUB_USER` is missing.
+- Test access before clone/fetch using the same authentication method.
+- Validate `CLI.md` only after git access and clone/fetch succeed.
 - Never print tokens.
 - Do not modify SARIF after scan.
 - Use safe shell practices.
-- To prepare the filtered workspace, use git diff against the best available base reference and copy only changed files that still exist in the working tree.
-- Prefer diff filters equivalent to Added, Copied, Modified, and Renamed files.
-- Preserve directory structure when copying into `.glog-filtered-src`.
-- If no changed files are detected, or if no suitable base reference is available, fall back to scanning the full project and document the fallback in the report.
-- Do not scan `.git`, `.glog`, or `.glog-filtered-src` as source content unless explicitly required by the project layout.
-- After the workflow completes, `.glog-filtered-src` may be removed as a temporary artifact.
-- If the current branch has an upstream tracking branch, verify that it is a sensible comparison base before using it as the base reference.
-- If the repository state is too unusual to determine changed files safely, prefer full-project fallback over risky assumptions.
+- Always scan the full current project root.
+- Do not scan `.git` or `.glog` as source content unless explicitly required by the project layout.
 - Do not stage or commit report files.
 - The report should prioritize explanation quality, security reasoning, and developer clarity over brevity.
 - When discussing false positives, be evidence-based and conservative.

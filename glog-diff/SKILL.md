@@ -165,10 +165,11 @@ Rules:
 - If the user replies with `skip` (or an empty/whitespace-only response), DO NOT pass `--lang` at all.
 - Otherwise pass `--lang <user_value>` exactly as provided (trim whitespace).
 - Do not invent or default a language.
-- Keep other flags hardcoded:
-  - `--client test`
-  - `--env dev`
-  - `--sarif-format-type STANDARD`
+- Do not hardcode client or env values in this skill.
+- `--client` must be sourced from the environment variable `GLOG_CLIENT`.
+- `--env` must be sourced from the environment variable `GLOG_ENV`.
+- Both `GLOG_CLIENT` and `GLOG_ENV` must already be set before the skill starts execution.
+- `--sarif-format-type STANDARD` remains hardcoded.
 
 # Purpose
 
@@ -180,6 +181,8 @@ Use global environment variables (do not prompt for them unless missing):
 - GLOG_TOKEN
 - GITHUB_TOKEN
 - GITHUB_USER
+- GLOG_CLIENT
+- GLOG_ENV
 
 If any is missing, stop and tell the user exactly which one(s) are missing and how to export them.
 
@@ -188,6 +191,16 @@ If `<REMEDIATION_MODE>` = `pr-per-finding`, one of the following must be availab
 - GitHub REST API access via `curl` using `GITHUB_TOKEN`
 
 If neither is available, stop with a clear error.
+
+Docker authentication recovery rule:
+- If a Docker pull, run, or other GHCR operation fails with an authentication or authorization error for `ghcr.io`, first verify that both `GITHUB_TOKEN` and `GITHUB_USER` are available in the current shell environment.
+- On Windows PowerShell, recover by logging in to GitHub Container Registry with the equivalent of:
+  `$env:GITHUB_TOKEN | docker login ghcr.io -u $env:GITHUB_USER --password-stdin`
+- Retry the failed GHCR Docker operation only after a successful Docker login.
+- Do not print the token.
+- Do not write the token to disk.
+- If Docker login fails, stop and report that GHCR authentication failed.
+- Perform GHCR Docker login only when an actual `ghcr.io` authentication/authorization error occurs, not preemptively.
 
 # Critical constraints (must follow)
 
@@ -199,11 +212,14 @@ If neither is available, stop with a clear error.
 - For non-Java scans:
   - prefer scanning only changed files by passing them through the `--files` flag when a reliable base reference can be determined
   - fall back to a full-project scan only when changed-file scanning is not reliable or not possible
-- Run scan with the hardcoded flags:
-  - `--client test`
-  - `--env dev`
+- Run scan with the required flags:
+  - `--client <value from GLOG_CLIENT>`
+  - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - `--lang <user_value>` ONLY if the user provided a language (not skip/empty). Otherwise do not include `--lang` at all.
+- `GLOG_CLIENT` and `GLOG_ENV` must be validated before any scan execution begins.
+- If either `GLOG_CLIENT` or `GLOG_ENV` is missing, stop immediately and do not run the engine.
+- Do not substitute hardcoded fallback values for client or env.
 - After scan is finished:
   - DO NOT modify `.glog/glog-scan.sarif` (read-only after creation).
 - Treat remediation advice as a focused security remediation task.
@@ -331,8 +347,8 @@ From the CURRENT project root (the repo you want to scan), do:
 - If `<SCAN_MODE>` = `changed-files`, pass `--files <SCAN_FILES_CSV>`.
 - If `<SCAN_MODE>` = `full-project-fallback`, do not pass `--files`.
 - Apply flags exactly:
-  - `--client test`
-  - `--env dev`
+  - `--client <value from GLOG_CLIENT>`
+  - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language (not skip/empty). If skipped, do not pass `--lang`.
 
