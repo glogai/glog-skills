@@ -130,7 +130,7 @@ Behavior:
     export VDB_APP_ONLY=false
     export VDB_HOME=/vdb
     export VDB_DATABASE_URL=ghcr.io/appthreat/vdbxz-10y:v6
-    export VDB_AGE_HOURS=0
+    export VDB_AGE_HOURS=168
     ```
 
     **Windows (PowerShell):**
@@ -139,7 +139,7 @@ Behavior:
     $env:VDB_APP_ONLY = "false"
     $env:VDB_HOME = "/vdb"
     $env:VDB_DATABASE_URL = "ghcr.io/appthreat/vdbxz-10y:v6"
-    $env:VDB_AGE_HOURS = "0"
+    $env:VDB_AGE_HOURS = "168"
     ```
 
 # Required environment
