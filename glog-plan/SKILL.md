@@ -80,7 +80,7 @@ Rules:
 
 # Purpose
 
-Use glog-action CLI instructions to run a scan for the CURRENT project root while keeping the scan rooted at the original project and excluding generated or non-codebase directories via the CLI ignore option. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, identify possible false positives, and produce a detailed remediation plan only.
+Use glog-action CLI instructions to run a scan for the CURRENT project root. Always scan the complete current project. Then analyze findings from `.glog/glog-scan.sarif`, validate each finding, identify possible false positives, and produce a detailed remediation plan only.
 
 This skill is planning-only:
 - it must NOT modify application source files
@@ -115,12 +115,7 @@ Docker authentication recovery rule:
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
-- Always use the original current project root as the scan path.
-- Scan only files that belong to the original project codebase.
-- Use the ignore option documented in `CLI.md` to exclude directories that are not part of the maintained codebase.
-- Always exclude `.git/` and `.glog/`.
-- Also exclude language/tool-specific generated, dependency-install, vendored, or build-output directories when they are not maintained source, such as `bin/`, `obj/`, `node_modules/`, `packages/`, `build/`, `dist/`, `target/`, and similar paths.
-- Do not scan copied workspaces, temporary directories, cache directories, or paths outside the original project root.
+- Always scan the full current project root.
 - Run scan with the required flags:
   - `--client <value from GLOG_CLIENT>`
   - `--env <value from GLOG_ENV>`
@@ -183,7 +178,6 @@ If running on Windows with Git Bash / MSYS2, apply these rules before any scan, 
 - Identify the exact command(s) to run `glog-action` (entrypoint, required args, docker usage, path handling, output behavior, etc.)
 - Follow CLI.md instructions strictly.
 - Confirm how the scan target path should be supplied.
-- Confirm how `CLI.md` expects ignore paths/directories to be supplied.
 - Confirm how the SARIF output is expected to land in the current project's `.glog/` directory.
 
 ## Step 2: Clean .glog and run scan
@@ -194,28 +188,18 @@ From the CURRENT project root (the repo you want to scan), do:
 - If `.glog` exists: remove it completely
 - Recreate `.glog/` directory
 
-2) Prepare scan ignore paths.
-- Build a set of relative directory paths under the current project root that are not part of the maintained codebase.
-- Always include `.git/` and `.glog/`.
-- Include language/tool-specific generated, dependency-install, vendored, or build-output directories when they are not maintained source, such as `bin/`, `obj/`, `node_modules/`, `packages/`, `build/`, `dist/`, `target/`, and similar directories.
-- Only include directories that currently exist inside the current project root.
-- Do not include paths outside the current project root.
-- Do not ignore directories that contain real maintained source for this repository.
-- Convert the ignore list into the format required by `CLI.md`.
-
-3) Execute scan using the invocation defined in CLI.md.
+2) Execute scan using the invocation defined in CLI.md.
 - Use the current project root as the scan path.
-- Scan the original current project only.
-- Pass the ignore option from `CLI.md` whenever the ignore list is non-empty.
+- Always scan the full current project.
 - Apply flags exactly:
   - `--client <value from GLOG_CLIENT>`
   - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language. If skipped, do not pass `--lang`.
 
-4) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project root exactly as specified by CLI.md.
+3) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project root exactly as specified by CLI.md.
 
-5) Ensure that the output SARIF file ends up at:
+4) Ensure that the output SARIF file ends up at:
 - `.glog/glog-scan.sarif` in the CURRENT project.
 
 Important:
@@ -228,7 +212,7 @@ Important:
 After scan:
 - Verify `.glog/glog-scan.sarif` exists.
 - If missing, stop and show the scan command output and your best diagnosis.
-- Record that the scan target was the original current project root and list the ignored directories used.
+- Record that the scan target was the full current project root.
 
 ## Step 3: Analyze findings from SARIF (read-only)
 
@@ -403,9 +387,8 @@ The report must use the following structure exactly in this section order:
 
 | Field | Value |
 |------|------|
-| Scan Target Type | original current project root |
+| Scan Target Type | full current project |
 | Scan Target Path | <current project root> |
-| Ignored Directories | <comma-separated ignored dirs or none> |
 
 ## SARIF Summary
 
@@ -510,9 +493,8 @@ The report must contain:
   - env
 
 - Scan target details:
-  - scan target type (`original current project root`)
+  - scan target type (`full current project`)
   - scan target path
-  - ignored directories used
 
 - SARIF summary:
   - total results count
@@ -607,8 +589,8 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 - Never print tokens.
 - Do not modify SARIF after scan.
 - Use safe shell practices.
-- Always use the original current project root as the scan path.
-- Use the CLI ignore option to exclude generated or non-codebase directories, including `.git/`, `.glog/`, and language-specific generated directories when they are not maintained source.
+- Always scan the full current project root.
+- Do not scan `.git` or `.glog` as source content unless explicitly required by the project layout.
 - Do not stage or commit report files.
 - The report should prioritize explanation quality, security reasoning, and developer clarity over brevity.
 - When discussing false positives, be evidence-based and conservative.
