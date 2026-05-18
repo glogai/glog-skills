@@ -69,6 +69,68 @@ After preparing the cache repo, define:
 
 and proceed with the workflow using `<GLOG_ACTION_PATH>/CLI.md`.
 
+# Interactive question ordering (STRICT)
+
+The agent must ask configuration questions sequentially, one at a time.
+
+Rules:
+- NEVER ask multiple configuration questions in the same message.
+- Ask the first required question and WAIT for the user response.
+- Do not continue the workflow until the user has answered that question.
+- After receiving a valid answer, store the value and only then ask the next question.
+- Do not repeat a question if a valid answer has already been provided.
+- Do not ask the next question before the current one is answered.
+
+Strict order of questions:
+
+1) Scan language
+2) Upload final SARIF result
+3) Windows staging mode, only when running a large scan on Windows
+
+Execution protocol:
+
+Step A — Ask scan language question only.
+
+Wait for the user response.
+
+If the response is valid:
+- store `<SCAN_LANGUAGE>`
+- proceed to Step B
+
+Step B — Ask final SARIF upload question only.
+
+Wait for the user response.
+
+If the response is valid (`yes` or `no`):
+- store `<UPLOAD_FINAL_SARIF>`
+- proceed to Step C
+
+If invalid:
+- ask the final SARIF upload question again
+- do NOT restart Step A
+
+Step C — Conditional Windows staging mode.
+
+Before scan execution, inspect only enough local environment/project metadata to determine whether all of these are true:
+- the skill is running on Windows
+- the application is large enough that direct Windows scanning may be unreliable, slow, or path-sensitive
+- WSL2 or Docker staging may materially improve scan reliability
+
+If any condition is false:
+- store `<WINDOWS_STAGING_MODE>` = `not-applicable`
+- proceed to scanning workflow
+
+If all conditions are true:
+- ask only the Windows staging mode question
+- wait for the user response
+- if the response is valid, store `<WINDOWS_STAGING_MODE>` and proceed to scanning workflow
+- if invalid, ask only the Windows staging mode question again
+
+The agent must never ask multiple configuration questions in the same message.
+The agent must never re-ask the language question if it was already answered.
+The agent must never re-ask the final SARIF upload question if it was already answered.
+The agent must never ask the Windows staging mode question unless the Windows large-application staging conditions are met.
+
 # Scan configuration
 
 Before doing ANY scan work, ask the user:
@@ -87,6 +149,31 @@ Rules:
 - `--env` must be sourced from the environment variable `GLOG_ENV`.
 - Both `GLOG_CLIENT` and `GLOG_ENV` must already be set before the skill starts execution.
 - `--sarif-format-type STANDARD` remains hardcoded.
+
+# Final SARIF upload configuration
+
+This question must be asked only AFTER the scan language question has been answered.
+Follow the Interactive question ordering rules strictly.
+
+Before doing ANY scan work, ask the user:
+
+"Should the final SARIF result be uploaded by the engine?
+
+Reply with one of:
+
+yes → Upload the final SARIF result.
+
+no → Do not upload the final SARIF result.
+
+Type exactly: yes or no"
+
+Rules:
+- The user response is required (the agent must ask and wait).
+- If the response is anything other than `yes` or `no`, ask again.
+- Do not assume a default.
+- Store the value as `<UPLOAD_FINAL_SARIF>`.
+- If `<UPLOAD_FINAL_SARIF>` = `yes`.
+- If `<UPLOAD_FINAL_SARIF>` = `no`.
 
 # Purpose
 
@@ -125,12 +212,13 @@ Docker authentication recovery rule:
 # Critical constraints (must follow)
 
 - Before analysis starts, clean `.glog` directory.
-- Always scan the full current project root.
+- Always scan the full current project root, except when the Windows large-application module scan override applies.
 - Run scan with the required flags:
   - `--client <value from GLOG_CLIENT>`
   - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - `--lang <user_value>` ONLY if the user provided a language. Otherwise do not include `--lang`.
+  - `-u` ONLY if the `<UPLOAD_FINAL_SARIF>` is `yes` to uploading the final SARIF result. Otherwise do not include `-u`.
 - `GLOG_CLIENT` and `GLOG_ENV` must be validated before any scan execution begins.
 - If either `GLOG_CLIENT` or `GLOG_ENV` is missing, stop immediately and do not run the engine.
 - Do not substitute hardcoded fallback values for client or env.
@@ -190,6 +278,102 @@ If running on Windows with Git Bash / MSYS2, apply these rules before any scan, 
 - Confirm how the scan target path should be supplied.
 - Confirm how the SARIF output is expected to land in the current project's `.glog/` directory.
 
+## Step 1.5: Windows large-application staging and module scan override
+
+Apply the Windows staging option ONLY when running on Windows and the current application is large enough to make a direct full-project scan unreliable, slow, or likely to fail.
+Apply the module scan override only when the project can also be divided into clear modules.
+
+Windows staging configuration for large applications:
+- When the Windows staging conditions are met, ask the user:
+
+"Large Windows application detected. Which staging mode should be used?
+
+Reply with one of the available options:
+
+wsl2-staging → Copy the original source code to WSL2 and run the glog CLI there using wsl bash calls. Recommended when WSL2 is installed.
+
+docker-volume-staging → Copy the original source code into a Docker volume and scan from that staged source.
+
+windows-direct → Continue from the original Windows checkout.
+
+Type exactly one option."
+
+- Offer only options whose prerequisites are available, plus `windows-direct`.
+- Recommend `wsl2-staging` when a WSL2 distro is available.
+- Use `docker-volume-staging` as the fallback staging option when WSL2 is not available but Docker is available.
+- Do not assume a staging mode. Store the answer as `<WINDOWS_STAGING_MODE>`.
+
+Command-generation rules:
+- Generate the concrete PowerShell, WSL, and Docker commands at execution time for the current machine. Do not blindly reuse hardcoded examples.
+- Before generating commands, discover and validate:
+  - current Windows project root and path quoting requirements
+  - available WSL distros and WSL version (`wsl -l -q`, `wsl -l -v`)
+  - Docker availability, when Docker staging is considered
+  - required environment variables in the current process and Windows User/System scopes
+  - generated/dependency/cache directories present in this repository
+- Commands must fail fast on missing tools, failed copy operations, missing staged files, missing env vars, or missing final SARIF.
+- Commands must never print `GLOG_TOKEN` or `GITHUB_TOKEN`; diagnostics may show only masked values.
+- Examples in this skill are patterns only. Adapt distro name, paths, quoting, copy tooling, and exclude rules to the actual environment.
+
+Original-source-only staging rule:
+- Scan only original codebase content.
+- When staging to WSL2 or Docker volume, copy only source files needed to scan/build context.
+- Strictly exclude generated build directories, dependency folders, local caches, IDE folders, VCS metadata, `.glog`, and dot-directories.
+- Exclude at least: `bin`, `obj`, `out`, `build`, `target`, `dist`, `node_modules`, `bower_components`, `__pycache__`, `.venv`, `venv`, `env`, `.tox`, `*.egg-info`, `.cache`, `.pytest_cache`, `.next`, `.nuxt`, `coverage`, `.vs`, `.idea`, `.gradle`, `.git`, `.glog`, and all directories whose name starts with `.`.
+- If any other generated directory is visible in the project, exclude it too.
+
+WSL2 staging requirements:
+- Do not install Claude Code CLI in WSL2.
+- Use `wsl bash -c` or `wsl bash -lc` calls to prepare staging and invoke the glog CLI.
+- Ensure `GITHUB_TOKEN`, `GLOG_TOKEN`, `GLOG_CLIENT`, `GLOG_ENV`, and `GITHUB_USER` are passed from Windows User/System scope to WSL2 using `WSLENV`.
+- Use `WSLENV` entries equivalent to `GITHUB_TOKEN/u:GLOG_TOKEN/u:GLOG_CLIENT/u:GLOG_ENV/u:GITHUB_USER/u`.
+- These variables must be available to every process executed inside the WSL2 session.
+- Prepare or reuse the glog-action cache inside WSL2 using the same authentication rules.
+- Run the scan from the staged WSL2 source path, not from the original Windows checkout.
+- After the scan finishes, copy final scan artifacts from WSL2 back to the original host checkout using PowerShell `Copy-Item` from the WSL UNC path, for example `\\wsl$\<distro>\...`, to avoid WSL permission issues.
+
+Docker volume staging requirements:
+- Create a unique Docker volume for the staged source.
+- Mount the original Windows checkout read-only when copying into the volume.
+- Copy only original source content into the volume, applying the same exclude rules.
+- Run the scan from the staged volume path when Docker staging is selected.
+- Remove temporary containers after use; remove the temporary volume after final artifacts are safely copied back when it is no longer needed.
+
+Module detection:
+- Identify module directories from build/project markers such as `.sln`, `.csproj`, `.fsproj`, `.vbproj`, `pom.xml`, `build.gradle`, `settings.gradle`, `package.json`, `go.mod`, `Cargo.toml`, or similar stack-specific module files.
+- Exclude dependency, build, generated, and VCS directories such as `.git`, `.glog`, `node_modules`, `target`, `build`, `dist`, `bin`, and `obj`.
+- If fewer than two module directories can be identified, do not use this override; continue with the normal full-project scan workflow.
+
+Windows module scan behavior:
+- Override the skill's default full-scan behavior for the scan execution step.
+- Scan each module separately by running one engine scan per module directory.
+- Apply the same required engine flags to every module scan:
+  - `--client <value from GLOG_CLIENT>`
+  - `--env <value from GLOG_ENV>`
+  - `--sarif-format-type STANDARD`
+  - `--lang <value>` only when provided
+  - `-u` only when `<UPLOAD_FINAL_SARIF>` is `yes`
+- If subagents are available and the user's request explicitly permits delegation, a separate agent may handle each module scan only when each agent has an isolated workspace or otherwise cannot race on the shared `.glog/glog-scan.sarif` output. If isolation is not available, run module scans sequentially.
+
+PowerShell storage pattern for module SARIFs:
+
+```powershell
+$glogModuleSarifDir = Join-Path $env:TEMP ("glog-module-sarifs-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Force -Path $glogModuleSarifDir | Out-Null
+
+# After each module scan completes and before starting the next scan:
+$safeModuleName = ($moduleName -replace '[^A-Za-z0-9_.-]', '_')
+Copy-Item -LiteralPath ".glog\glog-scan.sarif" -Destination (Join-Path $glogModuleSarifDir "$safeModuleName.sarif") -Force
+```
+
+Module SARIF storage rule:
+- After each module scan completes, immediately verify `.glog/glog-scan.sarif` exists.
+- Before starting the next module scan, copy `.glog/glog-scan.sarif` to the temporary directory outside `.glog/`.
+- Never save intermediate module SARIF files inside `.glog/`; each subsequent scan cleanup may delete them.
+- After all module scans complete, merge all temporary module SARIF files using a structured JSON/SARIF merge, not text concatenation.
+- Write only the final merged SARIF back to `.glog/glog-scan.sarif`.
+- Treat the final merged `.glog/glog-scan.sarif` as read-only after the merge is complete.
+
 ## Step 2: Clean .glog and run scan
 
 From the CURRENT project root (the repo you want to scan), do:
@@ -200,12 +384,15 @@ From the CURRENT project root (the repo you want to scan), do:
 
 2) Execute scan using the invocation defined in CLI.md.
 - Use the current project root as the scan path.
-- Always scan the full current project.
+- Always scan the full current project unless the Windows Step 1.5 module scan override applies.
+- On Windows, if `wsl2-staging` or `docker-volume-staging` was selected, execute the scan from the staged source path and copy final artifacts back to the original checkout after the scan.
+- On Windows, if the Step 1.5 module scan override applies, execute one scan per module directory instead of one full-project scan, then merge module SARIFs into `.glog/glog-scan.sarif`.
 - Apply flags exactly:
   - `--client <value from GLOG_CLIENT>`
   - `--env <value from GLOG_ENV>`
   - `--sarif-format-type STANDARD`
   - Apply `--lang <value>` ONLY if the user provided a language. If skipped, do not pass `--lang`.
+  - Apply `-u` ONLY if the `<UPLOAD_FINAL_SARIF>` is `yes` to uploading the final SARIF result. If the user answered `no`, do not pass `-u`.
 
 3) If CLI.md expects the runner script to be executed from inside glog-action repo, run it from there but target the current project root exactly as specified by CLI.md.
 
@@ -397,8 +584,16 @@ The report must use the following structure exactly in this section order:
 
 | Field | Value |
 |------|------|
-| Scan Target Type | full current project |
+| Scan Target Type | full current project or Windows module scan |
 | Scan Target Path | <current project root> |
+| Windows Staging Considered | <yes/no> |
+| Windows Staging Mode Selected | <wsl2-staging, docker-volume-staging, windows-direct, or n/a> |
+| Staged Source Path | <path or n/a> |
+| Final Artifacts Copied Back | <yes/no/n/a> |
+| Windows Module Scan Used | <yes/no> |
+| Modules Scanned | <module list or n/a> |
+| Temporary Module SARIF Directory | <path or n/a> |
+| Final Merged SARIF Path | `.glog/glog-scan.sarif` or n/a |
 
 ## SARIF Summary
 
@@ -503,8 +698,16 @@ The report must contain:
   - env
 
 - Scan target details:
-  - scan target type (`full current project`)
+  - scan target type (`full current project` or `Windows module scan`)
   - scan target path
+  - Windows staging considered: <yes | no>
+  - Windows staging mode selected: <wsl2-staging | docker-volume-staging | windows-direct | n/a>
+  - staged source path, if staging was used
+  - final artifacts copied back to original checkout: <yes | no | n/a>
+  - Windows module scan used: <yes | no>
+  - modules scanned, if module scan was used
+  - temporary module SARIF directory, if module scan was used
+  - final merged SARIF path, if module scan was used: `.glog/glog-scan.sarif`
 
 - SARIF summary:
   - total results count
@@ -595,9 +798,9 @@ If cleanup still cannot be completed due to environment or policy enforcement, c
 - Test access before clone/fetch using the same authentication method.
 - Validate `CLI.md` only after git access and clone/fetch succeed.
 - Never print tokens.
-- Do not modify SARIF after scan.
+- Do not modify final SARIF after scan completion. In Windows module-scan mode, merging temporary module SARIFs into `.glog/glog-scan.sarif` is part of scan completion; after that merge, treat the final SARIF as read-only.
 - Use safe shell practices.
-- Always scan the full current project root.
+- Always scan the full current project root, except when the Windows large-application module scan override applies.
 - Do not scan `.git` or `.glog` as source content unless explicitly required by the project layout.
 - Do not stage or commit report files.
 - The report should prioritize explanation quality, security reasoning, and developer clarity over brevity.
